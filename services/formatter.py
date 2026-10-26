@@ -146,33 +146,51 @@ def _task_row(t: Task, current: datetime, with_subject: bool = False, prefix: st
     return "\n".join(lines)
 
 
-def tasks_overview(tasks: list[Task], current: datetime) -> str:
-    pending = [t for t in tasks if not t.submitted and t.deadline > current]
-    missed = [t for t in tasks if not t.submitted and t.deadline <= current]
-    done = [t for t in tasks if t.submitted]
-    header = (
+def _tasks_header(tasks: list[Task], current: datetime) -> str:
+    pending = sum(1 for t in tasks if not t.submitted and t.deadline > current)
+    missed = sum(1 for t in tasks if not t.submitted and t.deadline <= current)
+    done = sum(1 for t in tasks if t.submitted)
+    return (
         "📚 <b>Fan resurslari</b>  ·  topshiriqlar\n"
-        f"⏳ Topshirilmagan: <b>{len(pending)}</b>  ·  ✅ Topshirilgan: <b>{len(done)}</b>"
-        + (f"  ·  ❌ Muddati o'tgan: <b>{len(missed)}</b>" if missed else "")
+        f"⏳ Topshirilmagan: <b>{pending}</b>  ·  ✅ Topshirilgan: <b>{done}</b>"
+        + (f"  ·  ❌ Muddati o'tgan: <b>{missed}</b>" if missed else "")
     )
+
+
+def tasks_overview(tasks: list[Task], current: datetime) -> str:
     if not tasks:
         return "📚 <b>Fan resurslari</b>\n\nJoriy semestrda topshiriqlar yo'q."
-    if not pending:
-        return f"{header}\n\nBarcha topshiriqlar topshirilgan 👏"
+    return f"{_tasks_header(tasks, current)}\n\nFanni tanlang 👇"
 
-    footer = "<i>Yuklash: HEMIS → O'quv reja → Fanlar resurslari</i>"
-    parts, shown = [header], 0
-    for subject in dict.fromkeys(t.subject for t in pending):  # muddat tartibida
-        items = [t for t in pending if t.subject == subject]
-        body = "\n\n".join(_task_row(t, current, prefix=f"{i}. ") for i, t in enumerate(items, 1))
-        block = f"📘 <b>{_e(subject.upper())}</b>\n<blockquote>{body}</blockquote>"
-        if len("\n\n".join(parts + [block, footer])) > 3900:  # Telegram chegarasi 4096
-            break
-        parts.append(block)
-        shown += len(items)
-    if shown < len(pending):
-        parts.append(f"… yana <b>{len(pending) - shown}</b> ta topshiriq HEMIS'da")
-    parts.append(footer)
+
+def subject_tasks(tasks: list[Task], subject_id: int, current: datetime) -> str:
+    """Tanlangan fan: topshirilmaganlar to'liq, qolganlari qisqa ro'yxat."""
+    items = [t for t in tasks if t.subject_id == subject_id]
+    header = _tasks_header(tasks, current)
+    if not items:
+        return f"{header}\n\nBu fan bo'yicha topshiriq topilmadi."
+
+    pending = [t for t in items if not t.submitted and t.deadline > current]
+    done = [t for t in items if t.submitted]
+    missed = [t for t in items if not t.submitted and t.deadline <= current]
+    parts = [header, f"📘 <b>{_e(items[0].subject.upper())}</b>"]
+    if pending:
+        rows = []
+        for i, t in enumerate(pending, 1):
+            row = _task_row(t, current, prefix=f"{i}. ")
+            if sum(len(r) for r in rows) + len(row) > 3000:  # Telegram chegarasi 4096
+                rows.append(f"… yana <b>{len(pending) - i + 1}</b> ta topshiriq HEMIS'da")
+                break
+            rows.append(row)
+        parts[-1] += "\n<blockquote>" + "\n\n".join(rows) + "</blockquote>"
+    else:
+        parts[-1] += "\n<i>Topshirilmagan topshiriq yo'q 👏</i>"
+    if done:
+        parts.append("✅ <b>Topshirilgan:</b>\n" + "\n".join(f"• {_e(t.name)}" for t in done))
+    if missed:
+        parts.append("❌ <b>Muddati o'tgan:</b>\n" + "\n".join(
+            f"• {_e(t.name)} — {_deadline(t)}" for t in missed))
+    parts.append("<i>Yuklash: HEMIS → O'quv reja → Fanlar resurslari</i>")
     return "\n\n".join(parts)
 
 

@@ -1,3 +1,4 @@
+import json
 from datetime import date, datetime
 
 import aiosqlite
@@ -43,6 +44,7 @@ CREATE TABLE IF NOT EXISTS absences (
 CREATE TABLE IF NOT EXISTS tasks (
     telegram_id   INTEGER NOT NULL,
     id            INTEGER NOT NULL,
+    subject_id    INTEGER,
     subject       TEXT,
     name          TEXT,
     deadline      INTEGER NOT NULL,  -- unix vaqt
@@ -50,6 +52,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     attempt_limit INTEGER,
     attempt_count INTEGER,
     submitted     INTEGER NOT NULL,
+    teacher       TEXT,
+    files         TEXT,              -- JSON: [[nomi, url], ...]
     PRIMARY KEY (telegram_id, id)
 );
 -- yuborilgan eslatmalar, bir xabar ikki marta ketmasligi uchun
@@ -77,6 +81,14 @@ async def init() -> None:
     if "tasks_synced" not in columns:
         # 0 bo'lsa mavjud topshiriqlar "yangi" deb xabar qilinmaydi
         await _db.execute("ALTER TABLE users ADD COLUMN tasks_synced INTEGER NOT NULL DEFAULT 0")
+    async with _db.execute("PRAGMA table_info(tasks)") as cur:
+        task_columns = {row["name"] for row in await cur.fetchall()}
+    if "files" not in task_columns:
+        # tasks — HEMIS keshi, eski tuzilishdagisini qayta yaratamiz; keyingi sinxronlashda
+        # mavjud topshiriqlar "yangi" deb xabar qilinmasligi uchun tasks_synced = 0
+        await _db.execute("DROP TABLE tasks")
+        await _db.executescript(SCHEMA)
+        await _db.execute("UPDATE users SET tasks_synced = 0")
     await _db.commit()
 
 
@@ -208,14 +220,32 @@ async def save_tasks(telegram_id: int, tasks: list[Task]) -> None:
     """Topshiriqlarni to'liq almashtiradi va foydalanuvchini sinxronlangan deb belgilaydi."""
     await _db.execute("DELETE FROM tasks WHERE telegram_id = ?", (telegram_id,))
     await _db.executemany(
-        """INSERT INTO tasks (telegram_id, id, subject, name, deadline, max_ball,
-                              attempt_limit, attempt_count, submitted)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        [(telegram_id, t.id, t.subject, t.name, int(t.deadline.timestamp()), t.max_ball,
-          t.attempt_limit, t.attempt_count, int(t.submitted)) for t in tasks],
+        """INSERT INTO tasks (telegram_id, id, subject_id, subject, name, deadline, max_ball,
+                              attempt_limit, attempt_count, submitted, teacher, files)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        [(telegram_id, t.id, t.subject_id, t.subject, t.name, int(t.deadline.timestamp()), t.max_ball,
+          t.attempt_limit, t.attempt_count, int(t.submitted), t.teacher, json.dumps(t.files))
+         for t in tasks],
     )
     await _db.execute("UPDATE users SET tasks_synced = 1 WHERE telegram_id = ?", (telegram_id,))
     await _db.commit()
+
+
+def _task(r: aiosqlite.Row) -> Task:
+    return Task(
+        id=r["id"], subject_id=r["subject_id"] or 0, subject=r["subject"], name=r["name"],
+        deadline=datetime.fromtimestamp(r["deadline"], TZ), max_ball=r["max_ball"],
+        attempt_limit=r["attempt_limit"], attempt_count=r["attempt_count"],
+        submitted=bool(r["submitted"]), teacher=r["teacher"] or "",
+        files=[tuple(f) for f in json.loads(r["files"] or "[]")],
+    )
+
+
+async def get_tasks(telegram_id: int) -> list[Task]:
+    async with _db.execute(
+        "SELECT * FROM tasks WHERE telegram_id = ? ORDER BY deadline", (telegram_id,)
+    ) as cur:
+        return [_task(r) for r in await cur.fetchall()]
 
 
 async def pending_tasks(telegram_id: int, after: datetime) -> list[Task]:
@@ -224,14 +254,7 @@ async def pending_tasks(telegram_id: int, after: datetime) -> list[Task]:
         "SELECT * FROM tasks WHERE telegram_id = ? AND submitted = 0 AND deadline > ? ORDER BY deadline",
         (telegram_id, int(after.timestamp())),
     ) as cur:
-        rows = await cur.fetchall()
-    return [
-        Task(id=r["id"], subject=r["subject"], name=r["name"],
-             deadline=datetime.fromtimestamp(r["deadline"], TZ), max_ball=r["max_ball"],
-             attempt_limit=r["attempt_limit"], attempt_count=r["attempt_count"],
-             submitted=False, teacher="", files=[])
-        for r in rows
-    ]
+        return [_task(r) for r in await cur.fetchall()]
 
 
 async def mark_sent(telegram_id: int, key: str) -> bool:

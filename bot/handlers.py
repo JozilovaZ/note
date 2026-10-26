@@ -188,16 +188,49 @@ async def resources(message: Message, bot: Bot):
     if not await _user_or_reply(message):
         return
     wait = await message.answer("⏳ Topshiriqlar HEMIS'dan yuklanmoqda...")
-    tasks = await sync_tasks(bot, message.from_user.id, notify_new=False)
+    await _show_subjects(wait, bot, message.from_user.id)
+
+
+async def _show_subjects(target: Message, bot: Bot, telegram_id: int) -> None:
+    """HEMIS'dan yangilab, fanlar ro'yxatini ko'rsatadi (target xabarini tahrirlaydi)."""
+    tasks = await sync_tasks(bot, telegram_id, notify_new=False)
     if tasks is None:
-        user = await db.get_user(message.from_user.id)
-        await wait.edit_text(HEMIS_DOWN if user and user["token"] else SESSION_EXPIRED)
+        user = await db.get_user(telegram_id)
+        await target.edit_text(HEMIS_DOWN if user and user["token"] else SESSION_EXPIRED)
         return
-    await wait.edit_text(
-        formatter.tasks_overview(tasks, now()),
-        reply_markup=kb.hemis_link(HEMIS_URL),
-        disable_web_page_preview=True,
-    )
+    current = now()
+    try:
+        await target.edit_text(
+            formatter.tasks_overview(tasks, current),
+            reply_markup=kb.subjects(tasks, current, None, HEMIS_URL),
+        )
+    except TelegramBadRequest:
+        pass  # xabar o'zgarmagan
+
+
+@router.callback_query(F.data.startswith("subj:"))
+async def subject_page(callback: CallbackQuery, bot: Bot):
+    user = await db.get_user(callback.from_user.id)
+    if not user or not user["token"]:
+        await callback.answer(NOT_LOGGED_IN, show_alert=True)
+        return
+    value = callback.data.split(":", 1)[1]
+    if value == "refresh":
+        await callback.answer("⏳ Yangilanmoqda...")
+        await _show_subjects(callback.message, bot, callback.from_user.id)
+        return
+
+    subject_id, current = int(value), now()
+    tasks = await db.get_tasks(callback.from_user.id)  # tez: HEMIS'ga so'rovsiz, bazadan
+    try:
+        await callback.message.edit_text(
+            formatter.subject_tasks(tasks, subject_id, current),
+            reply_markup=kb.subjects(tasks, current, subject_id, HEMIS_URL),
+            disable_web_page_preview=True,
+        )
+    except TelegramBadRequest:
+        pass  # xabar o'zgarmagan
+    await callback.answer()
 
 
 # ---------- Davomat va profil ----------

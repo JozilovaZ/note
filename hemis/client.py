@@ -172,6 +172,7 @@ def _parse_lesson(item: dict) -> Lesson | None:
 @dataclass
 class Task:
     id: int
+    subject_id: int
     subject: str
     name: str
     deadline: datetime
@@ -190,6 +191,7 @@ def _parse_task(item: dict) -> Task | None:
     attempts = int(item.get("attempt_count") or 0)
     return Task(
         id=int(item["id"]),
+        subject_id=int((item.get("subject") or {}).get("id") or 0),
         subject=_name(item.get("subject")) or "Noma'lum fan",
         name=str(item.get("name") or "").strip() or "Topshiriq",
         deadline=datetime.fromtimestamp(int(item["deadline"]), TZ),

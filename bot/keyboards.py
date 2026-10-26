@@ -25,10 +25,30 @@ main = ReplyKeyboardMarkup(
 )
 
 
-def hemis_link(url: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🌐 HEMIS'da yuklash", url=url)],
+def subjects(tasks: list, current, selected: int | None, hemis_url: str) -> InlineKeyboardMarkup:
+    """Topshirig'i bor fanlar: avval topshirilmaganlari (eng yaqin muddat bo'yicha)."""
+    by_subject: dict[int, list] = {}
+    for t in tasks:
+        by_subject.setdefault(t.subject_id, []).append(t)
+
+    def pending(items):
+        return [t for t in items if not t.submitted and t.deadline > current]
+
+    order = sorted(by_subject.items(), key=lambda kv: (
+        not pending(kv[1]), min((t.deadline for t in pending(kv[1])), default=current), kv[1][0].subject))
+    rows = []
+    for subject_id, items in order:
+        name = items[0].subject
+        name = name if len(name) <= 30 else name[:29].rstrip() + "…"
+        count = len(pending(items))
+        mark = "📖" if subject_id == selected else "📘" if count else "✅"
+        label = f"{mark} {name} · {count}" if count else f"{mark} {name}"
+        rows.append([InlineKeyboardButton(text=label, callback_data=f"subj:{subject_id}")])
+    rows.append([
+        InlineKeyboardButton(text="🔄 Yangilash", callback_data="subj:refresh"),
+        InlineKeyboardButton(text="🌐 HEMIS'da yuklash", url=hemis_url),
     ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 DAY_NAMES = ["Dushanba", "Seshanba", "Chorshanba", "Payshanba", "Juma", "Shanba", "Yakshanba"]
