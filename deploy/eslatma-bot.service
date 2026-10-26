@@ -1,0 +1,20 @@
+# Docker'siz ishga tushirish uchun systemd xizmati.
+# Loyiha /opt/eslatma_bot da, virtual muhit /opt/eslatma_bot/.venv da deb hisoblanadi.
+#   sudo cp deploy/eslatma-bot.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now eslatma-bot
+[Unit]
+Description=Eslatma Telegram bot (HEMIS dars jadvali)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=eslatma
+WorkingDirectory=/opt/eslatma_bot
+ExecStart=/opt/eslatma_bot/.venv/bin/python main.py
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
