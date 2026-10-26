@@ -50,18 +50,23 @@ def day_schedule(day: date, lessons: list[Lesson]) -> str:
     return _day_card(day, lessons)
 
 
-def week_schedule(monday: date, lessons: list[Lesson], today: date, group: str = "") -> str:
+def week_schedule(monday: date, lessons: list[Lesson], today: date, group: str = "",
+                  selected: date | None = None) -> str:
+    """Hafta sarlavhasi; kun tanlangan bo'lsa — o'sha kunning darslari."""
     sunday = monday + timedelta(days=6)
     header = "🗓 <b>Dars jadvali</b>" + (f"  ·  {_e(group)}" if group else "")
     week = f"<b>{_short_date(monday)} / {_short_date(sunday)}</b>"
     if monday <= today <= sunday:
         week += "  ·  <i>joriy hafta</i>"
+    week += f"  ·  {len(lessons)} ta dars"
 
-    days = sorted({l.day for l in lessons})
-    if not days:
-        return f"{header}\n{week}\n\nBu hafta dars yo'q."
-    cards = [_day_card(d, [l for l in lessons if l.day == d], today) for d in days]
-    return f"{header}\n{week}\n\n" + "\n\n".join(cards)
+    if selected is None:
+        hint = "Bu hafta dars yo'q." if not lessons else "Kunni tanlang 👇"
+        return f"{header}\n{week}\n\n{hint}"
+    day_lessons = [l for l in lessons if l.day == selected]
+    if not day_lessons:
+        return f"{header}\n{week}\n\n{_day_title(selected, today)}\n<i>Bu kuni dars yo'q 🎉</i>"
+    return f"{header}\n{week}\n\n{_day_card(selected, day_lessons, today)}"
 
 
 def reminder(lesson: Lesson, minutes: int) -> str:

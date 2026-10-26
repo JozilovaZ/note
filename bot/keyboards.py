@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 from aiogram.types import (
     InlineKeyboardButton,
@@ -31,15 +31,33 @@ def hemis_link(url: str) -> InlineKeyboardMarkup:
     ])
 
 
-def week_nav(monday: date, has_prev: bool, has_next: bool, is_current: bool) -> InlineKeyboardMarkup:
-    row = []
+DAY_NAMES = ["Dushanba", "Seshanba", "Chorshanba", "Payshanba", "Juma", "Shanba", "Yakshanba"]
+
+
+def week_days(monday: date, counts: dict[date, int], today: date, selected: date | None,
+              has_prev: bool, has_next: bool, is_current: bool) -> InlineKeyboardMarkup:
+    """Hafta kunlari tugmalari (Du–Sha, yakshanba faqat darsi bo'lsa) va hafta almashtirish."""
+    buttons = []
+    for i in range(7):
+        day = monday + timedelta(days=i)
+        if i == 6 and not counts.get(day):
+            continue
+        mark = "✅ " if day == selected else "👉 " if day == today else ""
+        count = counts.get(day, 0)
+        label = f"{mark}{DAY_NAMES[i]} · {count}" if count else f"{mark}{DAY_NAMES[i]} · —"
+        buttons.append(InlineKeyboardButton(text=label, callback_data=f"day:{day.toordinal()}"))
+    rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+
+    nav = []
     if has_prev:
-        row.append(InlineKeyboardButton(text="◀️ Oldingi", callback_data=f"week:{monday.toordinal() - 7}"))
+        nav.append(InlineKeyboardButton(text="◀️ Oldingi", callback_data=f"week:{monday.toordinal() - 7}"))
     if not is_current:
-        row.append(InlineKeyboardButton(text="Joriy hafta", callback_data="week:now"))
+        nav.append(InlineKeyboardButton(text="Joriy hafta", callback_data="week:now"))
     if has_next:
-        row.append(InlineKeyboardButton(text="Keyingi ▶️", callback_data=f"week:{monday.toordinal() + 7}"))
-    return InlineKeyboardMarkup(inline_keyboard=[row] if row else [])
+        nav.append(InlineKeyboardButton(text="Keyingi ▶️", callback_data=f"week:{monday.toordinal() + 7}"))
+    if nav:
+        rows.append(nav)
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def notify_settings(enabled: bool, minutes: int) -> InlineKeyboardMarkup:

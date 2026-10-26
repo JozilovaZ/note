@@ -1,3 +1,4 @@
+from collections import Counter
 from datetime import date, timedelta
 from html import escape
 
@@ -124,18 +125,20 @@ async def logout(message: Message, state: FSMContext):
 
 # ---------- Haftalik jadval ----------
 
-async def _week_view(user, monday: date):
+async def _week_view(user, monday: date, selected: date | None = None):
     today = now().date()
     sunday = monday + timedelta(days=6)
     lessons = await db.get_lessons(user["telegram_id"], monday, sunday)
     bounds = await db.lesson_days(user["telegram_id"])
-    keyboard = kb.week_nav(
-        monday,
+    counts = Counter(l.day for l in lessons)
+    keyboard = kb.week_days(
+        monday, counts, today, selected,
         has_prev=bool(bounds) and bounds[0] < monday,
         has_next=bool(bounds) and bounds[1] > sunday,
         is_current=monday <= today <= sunday,
     )
-    return formatter.week_schedule(monday, lessons, today, user["group_name"] or ""), keyboard
+    text = formatter.week_schedule(monday, lessons, today, user["group_name"] or "", selected)
+    return text, keyboard
 
 
 def _this_monday() -> date:
@@ -151,15 +154,20 @@ async def week(message: Message):
         await message.answer(text, reply_markup=keyboard)
 
 
-@router.callback_query(F.data.startswith("week:"))
+@router.callback_query(F.data.startswith(("week:", "day:")))
 async def week_page(callback: CallbackQuery):
     user = await db.get_user(callback.from_user.id)
     if not user:
         await callback.answer(NOT_LOGGED_IN, show_alert=True)
         return
-    value = callback.data.split(":", 1)[1]
-    monday = _this_monday() if value == "now" else date.fromordinal(int(value))
-    text, keyboard = await _week_view(user, monday)
+    action, value = callback.data.split(":", 1)
+    if action == "day":
+        selected = date.fromordinal(int(value))
+        monday = selected - timedelta(days=selected.weekday())
+    else:
+        selected = None
+        monday = _this_monday() if value == "now" else date.fromordinal(int(value))
+    text, keyboard = await _week_view(user, monday, selected)
     if callback.message.photo:
         # eski versiyadagi rasmli xabar: matnga almashtirib bo'lmaydi, yangisini yuboramiz
         await callback.message.delete()
