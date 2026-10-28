@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError
 
-from config import MORNING_TIME, REMIND_BEFORE, TZ
+from config import ABSENCE_LIMIT, MORNING_TIME, REMIND_BEFORE, TZ
 from db import database as db
 from hemis import client as hemis
 from services import formatter
@@ -20,6 +20,7 @@ TASK_HOURS = (8, 11, 14, 17, 20)  # topshiriqlar shu soatlarning 15-daqiqasida y
 TASK_REMINDERS = (("3d", timedelta(days=3)), ("1d", timedelta(days=1)), ("3h", timedelta(hours=3)))
 QUIET_HOURS = (22, 8)        # 22:00–08:00 topshiriq eslatmalari yuborilmaydi
 QUIET_ADVANCE = timedelta(hours=1)  # muddati tunda tugasa, eslatma 21:00 da yuboriladi
+ABSENCE_WARN_LEVELS = (50, 75, 90, 100)  # sababsiz NB chegaraning shu foizlariga yetganda ogohlantiriladi
 RELOGIN_TEXT = (
     "⚠️ HEMIS sessiyangiz tugadi. Eslatmalar davom etishi uchun /start bosib qayta kiring."
 )
@@ -81,6 +82,22 @@ async def check_absences(bot: Bot, telegram_id: int) -> None:
             elif a.excused and not known[key]:
                 await _send(bot, telegram_id, formatter.absence_excused(a))
     await db.save_absences(telegram_id, current)
+    if user["notify"]:
+        await _warn_absence_limit(bot, telegram_id, absences, user["absence_warned"])
+
+
+async def _warn_absence_limit(bot: Bot, telegram_id: int, absences: list[hemis.Absence], warned: int) -> None:
+    """Sababsiz NB yangi bosqichga (50%, 75%, ...) yetganda bir marta ogohlantiradi."""
+    if ABSENCE_LIMIT <= 0:
+        return
+    unexcused = sum(a.hours for a in absences if not a.excused)
+    level = max((p for p in ABSENCE_WARN_LEVELS if unexcused * 100 >= ABSENCE_LIMIT * p), default=0)
+    if level > warned:
+        await _send(bot, telegram_id, formatter.absence_limit(unexcused, ABSENCE_LIMIT))
+    # NB sababli deb belgilansa yoki yangi semestr boshlansa, bosqich pasayadi
+    # va keyinchalik qayta oshganda yana ogohlantiriladi
+    if level != warned:
+        await db.set_absence_warned(telegram_id, level)
 
 
 async def sync_tasks(bot: Bot, telegram_id: int, notify_new: bool = True) -> list[hemis.Task] | None:

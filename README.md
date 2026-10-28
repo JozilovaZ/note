@@ -5,7 +5,7 @@ SamDU talabalari uchun Telegram bot. HEMIS'dan olingan ma'lumotlar asosida ishla
 - 🗓 haftalik dars jadvali (xona, vaqt, o'qituvchi)
 - 📚 fan resurslari: topshiriqlar va muddatlari
 - 📊 davomat, 👤 profil
-- 🔔 eslatmalar: ertalabki jadval, darsdan oldin, yangi NB, topshiriq muddati, yangi topshiriq
+- 🔔 eslatmalar: ertalabki jadval, darsdan oldin, yangi NB, sababsiz NB chegarasiga yaqinlashish, topshiriq muddati, yangi topshiriq
 
 Parol saqlanmaydi: bazada faqat shifrlangan HEMIS tokeni turadi.
 
@@ -20,6 +20,7 @@ Parol saqlanmaydi: bazada faqat shifrlangan HEMIS tokeni turadi.
 | `SECRET_KEY` | tokenlarni shifrlash kaliti (pastda qanday yaratish yozilgan) |
 | `REMIND_BEFORE` | darsdan necha daqiqa oldin eslatish (standart 5) |
 | `MORNING_TIME` | ertalabki xabar vaqti (standart 07:30) |
+| `ABSENCE_LIMIT` | semestrda ruxsat etilgan sababsiz NB, soat (standart 74; 50%, 75%, 90% va 100% da ogohlantiriladi; `0` — o'chirish) |
 
 > ⚠️ `SECRET_KEY` yo'qolsa yoki o'zgarsa, barcha foydalanuvchilar qayta kirishi kerak bo'ladi.
 > `.env` faylini hech qachon GitHub'ga yoki chatga yubormang.

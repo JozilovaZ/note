@@ -96,7 +96,25 @@ def absence_excused(a: Absence) -> str:
     return f"✅ <b>NB sababli deb belgilandi</b>\n\n<blockquote>{_absence_row(a)}</blockquote>"
 
 
-def attendance(absences: list[Absence], group: str = "") -> str:
+def absence_limit(unexcused: int, limit: int) -> str:
+    percent = round(unexcused * 100 / limit)
+    if unexcused >= limit:
+        return (
+            "⛔️ <b>Sababsiz NB chegarasiga yetdingiz!</b>\n\n"
+            f"Sababsiz NB: <b>{unexcused} / {limit} soat</b> ({percent}%)\n\n"
+            "Zudlik bilan dekanatga murojaat qiling. Sababli qoldirgan darslaringiz "
+            "bo'lsa, ular uchun hujjat topshiring."
+        )
+    return (
+        "⚠️ <b>Sababsiz NB chegarasiga yaqinlashyapsiz</b>\n\n"
+        f"Sababsiz NB: <b>{unexcused} / {limit} soat</b> ({percent}%)\n"
+        f"Chegaragacha: <b>{limit - unexcused} soat</b>\n\n"
+        "Darslarni qoldirmaslikka harakat qiling. Sababli qoldirgan bo'lsangiz, "
+        "hujjatini dekanatga topshiring."
+    )
+
+
+def attendance(absences: list[Absence], group: str = "", limit: int = 0) -> str:
     header = "📊 <b>Davomat</b>" + (f"  ·  {_e(group)}" if group else "")
     if not absences:
         return f"{header}\n\nMa'lumotlar mavjud emas — qoldirilgan dars yo'q 👏"
@@ -104,9 +122,14 @@ def attendance(absences: list[Absence], group: str = "") -> str:
     unexcused = sum(a.hours for a in absences if not a.excused)
     excused = sum(a.hours for a in absences if a.excused)
     rows = [_absence_row(a, f"{i}. ") for i, a in enumerate(absences, 1)]
+    limit_line = ""
+    if limit > 0:
+        mark = "⛔️" if unexcused >= limit else "⚠️" if unexcused * 2 >= limit else "✅"
+        limit_line = f"{mark} Sababsiz NB chegarasi: <b>{unexcused} / {limit} soat</b>\n"
     return (
         f"{header}\n"
-        f"Jami: <b>{unexcused + excused} soat</b>  ·  sababsiz: <b>{unexcused}</b>  ·  sababli: <b>{excused}</b>\n\n"
+        f"Jami: <b>{unexcused + excused} soat</b>  ·  sababsiz: <b>{unexcused}</b>  ·  sababli: <b>{excused}</b>\n"
+        f"{limit_line}\n"
         "<blockquote>" + "\n\n".join(rows) + "</blockquote>"
     )
 
@@ -241,6 +264,7 @@ def notify_settings(enabled: bool, minutes: int, morning_time: str) -> str:
         f"☀️ Har kuni <b>{morning_time}</b> da bugungi darslar ro'yxati\n"
         f"⏰ Har bir darsdan <b>{minutes} daqiqa</b> oldin xona va vaqt\n"
         "🚨 NB qo'yilsa — darhol xabar\n"
+        "⚠️ Sababsiz NB chegarasiga yaqinlashsangiz — ogohlantirish\n"
         "📚 Topshiriq muddatidan 3 kun, 1 kun va 3 soat oldin\n\n"
         "Necha daqiqa oldin eslatilsin?"
     )

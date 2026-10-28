@@ -10,7 +10,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, CallbackQuery, Message, ReplyKeyboardRemove
 
 from bot import keyboards as kb
-from config import HEMIS_URL, MORNING_TIME, REMIND_BEFORE
+from config import ABSENCE_LIMIT, HEMIS_URL, MORNING_TIME, REMIND_BEFORE
 from db import database as db
 from hemis import client as hemis
 from services import formatter
@@ -242,7 +242,7 @@ async def attendance(message: Message):
         return
     absences = await _from_hemis(message, user, hemis.get_attendance)
     if absences is not None:
-        await message.answer(formatter.attendance(absences, user["group_name"] or ""))
+        await message.answer(formatter.attendance(absences, user["group_name"] or "", ABSENCE_LIMIT))
 
 
 @router.message(Command("profil"))

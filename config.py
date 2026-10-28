@@ -19,6 +19,8 @@ SECRET_KEY = _required("SECRET_KEY")
 
 REMIND_BEFORE = int(os.getenv("REMIND_BEFORE", "5"))
 MORNING_TIME = os.getenv("MORNING_TIME", "07:30")
+# semestr davomida ruxsat etilgan sababsiz NB (soat), shunga yaqinlashganda ogohlantiriladi
+ABSENCE_LIMIT = int(os.getenv("ABSENCE_LIMIT", "74"))
 TZ = ZoneInfo(os.getenv("TIMEZONE", "Asia/Tashkent"))
 
 DB_PATH = os.getenv("DB_PATH", "bot.db")
