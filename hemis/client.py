@@ -150,6 +150,40 @@ async def get_attendance(token: str) -> list[Absence]:
     return result
 
 
+@dataclass
+class Gpa:
+    year: str     # "2025-2026"
+    level: str    # "3-kurs"
+    gpa: str      # "3.64"
+    credits: int  # shu yilgacha jami
+    subjects: int
+    debts: int    # qarzdor fanlar soni
+
+
+async def get_gpa(token: str) -> list[Gpa]:
+    """O'quv yillari bo'yicha GPA, eng yangisi birinchi.
+
+    Fanlar bo'yicha baholar (education/subject-list) SamDU'da hamma joyda 0 qaytadi,
+    shuning uchun faqat GPA olinadi.
+    """
+    data = await _request("GET", "education/gpa-list", token) or []
+    result = []
+    for item in data:
+        if not isinstance(item, dict) or not item.get("gpa"):
+            continue
+        year = item.get("educationYear") or {}
+        result.append(Gpa(
+            year=_name(year) or str(year.get("code") or ""),
+            level=_name(item.get("level")),
+            gpa=str(item["gpa"]).strip(),
+            credits=int(float(item.get("credit_sum") or 0)),
+            subjects=int(item.get("subjects") or 0),
+            debts=int(item.get("debt_subjects") or 0),
+        ))
+    result.sort(key=lambda g: g.year, reverse=True)
+    return result
+
+
 def _parse_lesson(item: dict) -> Lesson | None:
     ts = item.get("lesson_date")
     pair = item.get("lessonPair") or {}

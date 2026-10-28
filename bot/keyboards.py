@@ -12,6 +12,7 @@ RESOURCES = "📚 Fan resurslari"
 ATTENDANCE = "📊 Davomat"
 PROFILE = "👤 Profil"
 NOTIFY = "🔔 Eslatmalar"
+GPA = "📈 GPA"
 
 REMIND_OPTIONS = (5, 10, 15, 30)
 
@@ -19,7 +20,7 @@ main = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text=WEEK), KeyboardButton(text=RESOURCES)],
         [KeyboardButton(text=ATTENDANCE), KeyboardButton(text=PROFILE)],
-        [KeyboardButton(text=NOTIFY)],
+        [KeyboardButton(text=GPA), KeyboardButton(text=NOTIFY)],
     ],
     resize_keyboard=True,
 )

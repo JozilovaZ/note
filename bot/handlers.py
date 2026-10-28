@@ -14,7 +14,7 @@ from config import ABSENCE_LIMIT, HEMIS_URL, MORNING_TIME, REMIND_BEFORE
 from db import database as db
 from hemis import client as hemis
 from services import formatter
-from services.scheduler import check_absences, now, refresh_user, sync_tasks
+from services.scheduler import check_absences, check_gpa, now, refresh_user, sync_tasks
 
 router = Router()
 
@@ -103,6 +103,7 @@ async def got_password(message: Message, state: FSMContext, bot: Bot):
     await refresh_user(bot, message.from_user.id)
     await check_absences(bot, message.from_user.id)  # mavjud NB'larni eslab qoladi
     await sync_tasks(bot, message.from_user.id)  # mavjud topshiriqlarni eslab qoladi
+    await check_gpa(bot, message.from_user.id)  # joriy GPA'ni eslab qoladi
     await wait.delete()
     await message.answer(
         f"✅ Xush kelibsiz, <b>{escape(profile['full_name'])}</b>!\n"
@@ -243,6 +244,16 @@ async def attendance(message: Message):
     absences = await _from_hemis(message, user, hemis.get_attendance)
     if absences is not None:
         await message.answer(formatter.attendance(absences, user["group_name"] or "", ABSENCE_LIMIT))
+
+
+@router.message(Command("gpa"))
+@router.message(F.text == kb.GPA)
+async def gpa(message: Message):
+    if not (user := await _user_or_reply(message)):
+        return
+    items = await _from_hemis(message, user, hemis.get_gpa)
+    if items is not None:
+        await message.answer(formatter.gpa(items))
 
 
 @router.message(Command("profil"))

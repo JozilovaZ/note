@@ -84,6 +84,9 @@ async def init() -> None:
     if "absence_warned" not in columns:
         # NB chegarasining necha foiziga yetgani haqida oxirgi marta ogohlantirilgan
         await _db.execute("ALTER TABLE users ADD COLUMN absence_warned INTEGER NOT NULL DEFAULT 0")
+    if "gpa_state" not in columns:
+        # JSON: {"2025-2026": ["3.64", 1], ...}; NULL bo'lsa GPA hali olinmagan, xabar yuborilmaydi
+        await _db.execute("ALTER TABLE users ADD COLUMN gpa_state TEXT")
     async with _db.execute("PRAGMA table_info(tasks)") as cur:
         task_columns = {row["name"] for row in await cur.fetchall()}
     if "files" not in task_columns:
@@ -120,6 +123,8 @@ async def save_user(telegram_id: int, login: str, token: str, full_name: str, gr
                                  THEN users.tasks_synced ELSE 0 END,
              absence_warned = CASE WHEN users.hemis_login = excluded.hemis_login
                                    THEN users.absence_warned ELSE 0 END,
+             gpa_state = CASE WHEN users.hemis_login = excluded.hemis_login
+                              THEN users.gpa_state ELSE NULL END,
              hemis_login = excluded.hemis_login, token = excluded.token,
              full_name = excluded.full_name, group_name = excluded.group_name""",
         (telegram_id, login, _fernet.encrypt(token.encode()).decode(), full_name, group),
@@ -154,6 +159,12 @@ async def set_remind_before(telegram_id: int, minutes: int) -> None:
 
 async def set_absence_warned(telegram_id: int, level: int) -> None:
     await _db.execute("UPDATE users SET absence_warned = ? WHERE telegram_id = ?", (level, telegram_id))
+    await _db.commit()
+
+
+async def set_gpa_state(telegram_id: int, state: dict) -> None:
+    await _db.execute("UPDATE users SET gpa_state = ? WHERE telegram_id = ?",
+                      (json.dumps(state, ensure_ascii=False), telegram_id))
     await _db.commit()
 
 

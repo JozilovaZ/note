@@ -2,7 +2,7 @@
 from datetime import date, datetime, timedelta
 from html import escape
 
-from hemis.client import Absence, Lesson, Task
+from hemis.client import Absence, Gpa, Lesson, Task
 
 WEEKDAYS = ["Dushanba", "Seshanba", "Chorshanba", "Payshanba", "Juma", "Shanba", "Yakshanba"]
 MONTHS = ["yanvar", "fevral", "mart", "aprel", "may", "iyun",
@@ -256,6 +256,57 @@ def profile(p: dict) -> str:
     return "\n\n".join(s for s in sections if s)
 
 
+# ---------- GPA ----------
+
+def _gpa_diff(new: str, old: str) -> str:
+    try:
+        diff = float(new) - float(old)
+    except ValueError:
+        return ""
+    if abs(diff) < 0.005:
+        return ""
+    return f"  ⬆️ +{diff:.2f}" if diff > 0 else f"  ⬇️ {diff:.2f}"
+
+
+def _gpa_row(g: Gpa) -> str:
+    debts = f"⚠️ <b>{g.debts}</b>" if g.debts else "<b>yo'q</b>"
+    return (
+        f"<b>{_e(' · '.join(x for x in (g.year, g.level) if x))}</b>\n"
+        f"GPA: <b>{_e(g.gpa)}</b>  ·  Jami kredit: <b>{g.credits}</b>\n"
+        f"Fanlar: <b>{g.subjects}</b>  ·  Qarzdorlik: {debts}"
+    )
+
+
+def gpa(items: list[Gpa]) -> str:
+    if not items:
+        return "📈 <b>GPA</b>\n\nGPA ma'lumotlari hali mavjud emas."
+    latest = items[0]
+    trend = _gpa_diff(latest.gpa, items[1].gpa) if len(items) > 1 else ""
+    text = (
+        f"📈 <b>GPA: {_e(latest.gpa)}</b>{trend}\n\n"
+        "<blockquote>" + "\n\n".join(_gpa_row(g) for g in items) + "</blockquote>"
+    )
+    if latest.debts:
+        text += (f"\n\n⚠️ Akademik qarzdorlik: <b>{latest.debts} ta fan</b>. "
+                 "Qayta topshirish bo'yicha dekanatga murojaat qiling.")
+    return text
+
+
+def gpa_changed(g: Gpa, old: list | None) -> str:
+    """old — avvalgi holat [gpa, qarzdorlik] yoki None (yangi o'quv yili)."""
+    if old is None:
+        return f"📈 <b>Yangi GPA e'lon qilindi!</b>\n\n<blockquote>{_gpa_row(g)}</blockquote>"
+    old_gpa, old_debts = old
+    lines = [f"📈 <b>GPA yangilandi</b> · {_e(g.year)}\n"]
+    if g.gpa != old_gpa:
+        lines.append(f"GPA: {_e(old_gpa)} → <b>{_e(g.gpa)}</b>{_gpa_diff(g.gpa, old_gpa)}")
+    if g.debts > old_debts:
+        lines.append(f"⚠️ Qarzdor fanlar: {old_debts} → <b>{g.debts}</b>")
+    elif g.debts < old_debts:
+        lines.append(f"✅ Qarzdor fanlar: {old_debts} → <b>{g.debts}</b>")
+    return "\n".join(lines)
+
+
 def notify_settings(enabled: bool, minutes: int, morning_time: str) -> str:
     if not enabled:
         return "🔕 <b>Eslatmalar o'chirilgan</b>\n\nYoqish uchun pastdagi tugmani bosing."
@@ -265,6 +316,7 @@ def notify_settings(enabled: bool, minutes: int, morning_time: str) -> str:
         f"⏰ Har bir darsdan <b>{minutes} daqiqa</b> oldin xona va vaqt\n"
         "🚨 NB qo'yilsa — darhol xabar\n"
         "⚠️ Sababsiz NB chegarasiga yaqinlashsangiz — ogohlantirish\n"
-        "📚 Topshiriq muddatidan 3 kun, 1 kun va 3 soat oldin\n\n"
+        "📚 Topshiriq muddatidan 3 kun, 1 kun va 3 soat oldin\n"
+        "📈 GPA yangilansa yoki qarzdorlik o'zgarsa — xabar\n\n"
         "Necha daqiqa oldin eslatilsin?"
     )

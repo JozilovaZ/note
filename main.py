@@ -15,6 +15,7 @@ COMMANDS = [
     BotCommand(command="hafta", description="Haftalik dars jadvali"),
     BotCommand(command="resurslar", description="Fan resurslari: topshiriqlar va muddatlar"),
     BotCommand(command="davomat", description="Qoldirilgan darslar"),
+    BotCommand(command="gpa", description="GPA va akademik qarzdorlik"),
     BotCommand(command="profil", description="Profil"),
     BotCommand(command="eslatma", description="Eslatma sozlamalari"),
     BotCommand(command="chiqish", description="Ma'lumotlarimni o'chirish"),

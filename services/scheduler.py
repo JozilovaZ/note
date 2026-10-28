@@ -1,5 +1,6 @@
-"""Fon vazifalari: jadvalni yangilash, ertalabki xabar, darsdan oldin eslatma va yangi NB xabari."""
+"""Fon vazifalari: jadvalni yangilash, ertalabki xabar, darsdan oldin eslatma, yangi NB va GPA xabari."""
 import asyncio
+import json
 import logging
 from datetime import datetime, timedelta
 
@@ -21,6 +22,7 @@ TASK_REMINDERS = (("3d", timedelta(days=3)), ("1d", timedelta(days=1)), ("3h", t
 QUIET_HOURS = (22, 8)        # 22:00–08:00 topshiriq eslatmalari yuborilmaydi
 QUIET_ADVANCE = timedelta(hours=1)  # muddati tunda tugasa, eslatma 21:00 da yuboriladi
 ABSENCE_WARN_LEVELS = (50, 75, 90, 100)  # sababsiz NB chegaraning shu foizlariga yetganda ogohlantiriladi
+GPA_TIME = "12:30"           # GPA kuniga bir marta tekshiriladi
 RELOGIN_TEXT = (
     "⚠️ HEMIS sessiyangiz tugadi. Eslatmalar davom etishi uchun /start bosib qayta kiring."
 )
@@ -100,6 +102,35 @@ async def _warn_absence_limit(bot: Bot, telegram_id: int, absences: list[hemis.A
         await db.set_absence_warned(telegram_id, level)
 
 
+async def check_gpa(bot: Bot, telegram_id: int) -> None:
+    """GPA'ni oldingi holat bilan solishtiradi: yangi yil GPA'si yoki o'zgarish bo'lsa xabar beradi."""
+    user = await db.get_user(telegram_id)
+    token = db.decrypt_token(user["token"]) if user else None
+    if not token:
+        return
+    try:
+        items = await hemis.get_gpa(token)
+    except hemis.TokenExpired:
+        await db.invalidate_token(telegram_id)
+        await _send(bot, telegram_id, RELOGIN_TEXT)
+        return
+    except hemis.HemisError as e:
+        log.warning("GPA tekshirilmadi (%s): %s", telegram_id, e)
+        return
+    if not items:  # bo'sh javobni saqlasak, keyingi safar hamma yil "yangi" bo'lib qoladi
+        return
+
+    state = {g.year: [g.gpa, g.debts] for g in items}
+    # birinchi marta: mavjud GPA uchun xabar yubormasdan faqat eslab qolamiz
+    known = json.loads(user["gpa_state"]) if user["gpa_state"] else None
+    if known is not None and user["notify"]:
+        for g in reversed(items):  # eskisidan yangisiga
+            if known.get(g.year) != state[g.year]:
+                await _send(bot, telegram_id, formatter.gpa_changed(g, known.get(g.year)))
+    if state != known:
+        await db.set_gpa_state(telegram_id, state)
+
+
 async def sync_tasks(bot: Bot, telegram_id: int, notify_new: bool = True) -> list[hemis.Task] | None:
     """Topshiriqlarni HEMIS'dan oladi, yangilari haqida xabar beradi va saqlaydi."""
     user = await db.get_user(telegram_id)
@@ -170,7 +201,7 @@ async def _send(bot: Bot, telegram_id: int, text: str) -> None:
 
 
 async def _sync_all(bot: Bot, telegram_ids: list[int], schedule: bool = False,
-                    absences: bool = False, tasks: bool = False) -> None:
+                    absences: bool = False, tasks: bool = False, gpa: bool = False) -> None:
     for tid in telegram_ids:
         if schedule:
             await refresh_user(bot, tid)
@@ -178,6 +209,8 @@ async def _sync_all(bot: Bot, telegram_ids: list[int], schedule: bool = False,
             await check_absences(bot, tid)
         if tasks:
             await sync_tasks(bot, tid)
+        if gpa:
+            await check_gpa(bot, tid)
         await asyncio.sleep(1)  # HEMIS'ni ortiqcha yuklamaslik uchun
 
 
@@ -194,10 +227,11 @@ async def _tick(bot: Bot) -> None:
     schedule_due = current.minute == 0 and current.hour in REFRESH_HOURS
     absences_due = current.minute in ABSENCE_MINUTES and ABSENCE_HOURS[0] <= current.hour < ABSENCE_HOURS[1]
     tasks_due = current.minute == 15 and current.hour in TASK_HOURS
-    if schedule_due or absences_due or tasks_due:
+    gpa_due = hhmm == GPA_TIME
+    if schedule_due or absences_due or tasks_due or gpa_due:
         # alohida vazifada, eslatmalar kechikmasligi uchun
         asyncio.create_task(_sync_all(bot, [u["telegram_id"] for u in users],
-                                      schedule_due, absences_due, tasks_due))
+                                      schedule_due, absences_due, tasks_due, gpa_due))
 
     for user in users:
         if not user["notify"]:
@@ -224,7 +258,7 @@ async def _tick(bot: Bot) -> None:
 async def run(bot: Bot) -> None:
     # ishga tushganda davomatni darhol tekshirish (yangi foydalanuvchilar uchun boshlang'ich holat)
     users = await db.logged_in_users()
-    asyncio.create_task(_sync_all(bot, [u["telegram_id"] for u in users], absences=True, tasks=True))
+    asyncio.create_task(_sync_all(bot, [u["telegram_id"] for u in users], absences=True, tasks=True, gpa=True))
     while True:
         try:
             await _tick(bot)

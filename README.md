@@ -4,8 +4,8 @@ SamDU talabalari uchun Telegram bot. HEMIS'dan olingan ma'lumotlar asosida ishla
 
 - 🗓 haftalik dars jadvali (xona, vaqt, o'qituvchi)
 - 📚 fan resurslari: topshiriqlar va muddatlari
-- 📊 davomat, 👤 profil
-- 🔔 eslatmalar: ertalabki jadval, darsdan oldin, yangi NB, sababsiz NB chegarasiga yaqinlashish, topshiriq muddati, yangi topshiriq
+- 📊 davomat, 📈 GPA va akademik qarzdorlik, 👤 profil
+- 🔔 eslatmalar: ertalabki jadval, darsdan oldin, yangi NB, sababsiz NB chegarasiga yaqinlashish, topshiriq muddati, yangi topshiriq, GPA o'zgarishi
 
 Parol saqlanmaydi: bazada faqat shifrlangan HEMIS tokeni turadi.
 
