@@ -19,6 +19,7 @@ ABSENCE_HOURS = (8, 21)      # ...08:00 dan 21:00 gacha
 TASK_HOURS = (8, 11, 14, 17, 20)  # topshiriqlar shu soatlarning 15-daqiqasida yangilanadi
 TASK_REMINDERS = (("3d", timedelta(days=3)), ("1d", timedelta(days=1)), ("3h", timedelta(hours=3)))
 QUIET_HOURS = (22, 8)        # 22:00–08:00 topshiriq eslatmalari yuborilmaydi
+QUIET_ADVANCE = timedelta(hours=1)  # muddati tunda tugasa, eslatma 21:00 da yuboriladi
 RELOGIN_TEXT = (
     "⚠️ HEMIS sessiyangiz tugadi. Eslatmalar davom etishi uchun /start bosib qayta kiring."
 )
@@ -109,10 +110,29 @@ async def sync_tasks(bot: Bot, telegram_id: int, notify_new: bool = True) -> lis
     return tasks
 
 
+def _quiet_start(moment: datetime) -> datetime | None:
+    """moment tinch soatlarga tushsa, o'sha tunning boshlanish vaqti (22:00)."""
+    start = moment.replace(hour=QUIET_HOURS[0], minute=0, second=0, microsecond=0)
+    if moment.hour >= QUIET_HOURS[0]:
+        return start
+    if moment.hour < QUIET_HOURS[1]:
+        return start - timedelta(days=1)
+    return None
+
+
+def _remind_at(deadline: datetime, delta: timedelta) -> datetime:
+    """Eslatma vaqti. Muddat tunda tugasa, tunga tushgan eslatma kechqurunga suriladi,
+    aks holda u ertalabgacha kutib, muddatdan keyin qolib ketardi."""
+    at = deadline - delta
+    quiet = _quiet_start(deadline)
+    if quiet and at > quiet - QUIET_ADVANCE:
+        at = quiet - QUIET_ADVANCE
+    return at
+
+
 async def _remind_tasks(bot: Bot, telegram_id: int, current: datetime) -> None:
     for t in await db.pending_tasks(telegram_id, current):
-        left = t.deadline - current
-        due = [label for label, delta in TASK_REMINDERS if left <= delta]
+        due = [label for label, delta in TASK_REMINDERS if current >= _remind_at(t.deadline, delta)]
         if not due:
             continue
         # birdaniga bir nechta chegara o'tgan bo'lsa (masalan topshiriq kech qo'shilgan),
