@@ -8,7 +8,7 @@ from datetime import date, datetime
 
 import aiohttp
 
-from config import HEMIS_URL, TZ
+from config import TZ
 
 TIMEOUT = aiohttp.ClientTimeout(total=20)
 
@@ -48,11 +48,17 @@ def _name(obj, key: str = "name") -> str:
     return ""
 
 
-async def _request(method: str, path: str, token: str | None = None, **kwargs):
+@dataclass(frozen=True)
+class Auth:
+    url: str    # talaba universitetining HEMIS manzili
+    token: str
+
+
+async def _request(method: str, base_url: str, path: str, token: str | None = None, **kwargs):
     headers = {"Accept": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    url = f"{HEMIS_URL}/rest/v1/{path}"
+    url = f"{base_url}/rest/v1/{path}"
     try:
         async with aiohttp.ClientSession(timeout=TIMEOUT) as session:
             async with session.request(method, url, headers=headers, **kwargs) as resp:
@@ -71,9 +77,9 @@ async def _request(method: str, path: str, token: str | None = None, **kwargs):
     return body.get("data")
 
 
-async def login(username: str, password: str) -> str:
+async def login(base_url: str, username: str, password: str) -> str:
     try:
-        data = await _request("POST", "auth/login", json={"login": username, "password": password})
+        data = await _request("POST", base_url, "auth/login", json={"login": username, "password": password})
     except (ApiError, TokenExpired) as e:
         raise LoginError() from e
     token = (data or {}).get("token")
@@ -82,8 +88,8 @@ async def login(username: str, password: str) -> str:
     return token
 
 
-async def get_profile(token: str) -> dict:
-    data = await _request("GET", "account/me", token) or {}
+async def get_profile(auth: Auth) -> dict:
+    data = await _request("GET", auth.url, "account/me", auth.token) or {}
     return {
         "full_name": str(data.get("full_name") or "").strip(),
         "student_id": str(data.get("student_id_number") or ""),
@@ -126,9 +132,9 @@ class Absence:
     excused: bool
 
 
-async def get_attendance(token: str) -> list[Absence]:
+async def get_attendance(auth: Auth) -> list[Absence]:
     """Joriy semestrda qoldirilgan darslar (har bir yozuv bitta dars)."""
-    data = await _request("GET", "education/attendance", token) or []
+    data = await _request("GET", auth.url, "education/attendance", auth.token) or []
     result = []
     for item in data:
         if not isinstance(item, dict) or not item.get("lesson_date"):
@@ -160,13 +166,13 @@ class Gpa:
     debts: int    # qarzdor fanlar soni
 
 
-async def get_gpa(token: str) -> list[Gpa]:
+async def get_gpa(auth: Auth) -> list[Gpa]:
     """O'quv yillari bo'yicha GPA, eng yangisi birinchi.
 
     Fanlar bo'yicha baholar (education/subject-list) SamDU'da hamma joyda 0 qaytadi,
     shuning uchun faqat GPA olinadi.
     """
-    data = await _request("GET", "education/gpa-list", token) or []
+    data = await _request("GET", auth.url, "education/gpa-list", auth.token) or []
     result = []
     for item in data:
         if not isinstance(item, dict) or not item.get("gpa"):
@@ -240,29 +246,29 @@ def _parse_task(item: dict) -> Task | None:
     )
 
 
-async def get_tasks(token: str) -> list[Task]:
+async def get_tasks(auth: Auth) -> list[Task]:
     """Joriy semestrdagi barcha fanlarning topshiriqlari."""
-    semesters = await _request("GET", "education/semesters", token) or []
+    semesters = await _request("GET", auth.url, "education/semesters", auth.token) or []
     current = next((s for s in semesters if isinstance(s, dict) and s.get("current")), None)
     if not current:
         return []
     code = str(current.get("code"))
-    subjects = await _request("GET", "education/subjects", token) or []
+    subjects = await _request("GET", auth.url, "education/subjects", auth.token) or []
     tasks = []
     for s in subjects:
         if not isinstance(s, dict) or str(s.get("_semester")) != code or not s.get("tasks_count"):
             continue
         subject_id = (s.get("subject") or {}).get("id")
-        data = await _request("GET", "education/subject", token,
+        data = await _request("GET", auth.url, "education/subject", auth.token,
                               params={"subject": subject_id, "semester": code}) or {}
         tasks += [t for t in (_parse_task(i) for i in data.get("tasks") or [] if isinstance(i, dict)) if t]
     tasks.sort(key=lambda t: t.deadline)
     return tasks
 
 
-async def get_schedule(token: str) -> list[Lesson]:
+async def get_schedule(auth: Auth) -> list[Lesson]:
     """Parametrsiz so'rov semestrning e'lon qilingan barcha haftalarini qaytaradi."""
-    data = await _request("GET", "education/schedule", token) or []
+    data = await _request("GET", auth.url, "education/schedule", auth.token) or []
     if isinstance(data, dict):  # ba'zi versiyalarda {"items": [...]}
         data = data.get("items") or []
     lessons = [l for l in (_parse_lesson(i) for i in data if isinstance(i, dict)) if l]

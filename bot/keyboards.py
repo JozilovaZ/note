@@ -7,6 +7,8 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
 )
 
+from config import UNIVERSITIES
+
 WEEK = "🗓 Haftalik jadval"
 RESOURCES = "📚 Fan resurslari"
 ATTENDANCE = "📊 Davomat"
@@ -24,6 +26,13 @@ main = ReplyKeyboardMarkup(
     ],
     resize_keyboard=True,
 )
+
+
+def universities() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"🏛 {u.short} — {u.name}", callback_data=f"uni:{code}")]
+        for code, u in UNIVERSITIES.items()
+    ])
 
 
 def subjects(tasks: list, current, selected: int | None, hemis_url: str) -> InlineKeyboardMarkup:

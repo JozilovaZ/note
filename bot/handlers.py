@@ -10,7 +10,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, CallbackQuery, Message, ReplyKeyboardRemove
 
 from bot import keyboards as kb
-from config import ABSENCE_LIMIT, HEMIS_URL, MORNING_TIME, REMIND_BEFORE
+from config import ABSENCE_LIMIT, MORNING_TIME, REMIND_BEFORE, UNIVERSITIES
 from db import database as db
 from hemis import client as hemis
 from services import formatter
@@ -24,6 +24,7 @@ HEMIS_DOWN = "⚠️ HEMIS hozir javob bermayapti, keyinroq urinib ko'ring."
 
 
 class Login(StatesGroup):
+    university = State()
     login = State()
     password = State()
 
@@ -39,7 +40,7 @@ async def _user_or_reply(message: Message):
 async def _from_hemis(message: Message, user, fetch):
     """HEMIS'dan jonli ma'lumot oladi; xato bo'lsa foydalanuvchiga yozib None qaytaradi."""
     try:
-        return await fetch(db.decrypt_token(user["token"]))
+        return await fetch(db.auth(user))
     except hemis.TokenExpired:
         await db.invalidate_token(user["telegram_id"])
         await message.answer(SESSION_EXPIRED)
@@ -60,11 +61,29 @@ async def start(message: Message, state: FSMContext):
     await message.answer(
         "Salom! Men dars jadvalingizni eslatib turaman: qaysi dars, qaysi xonada, soat nechida.\n\n"
         "🔐 Login va parolingiz faqat HEMIS'ga kirish uchun ishlatiladi. "
-        "Parol <b>saqlanmaydi</b> va xabaringiz chatdan darhol o'chiriladi.\n\n"
-        "HEMIS <b>loginingizni</b> yuboring (talaba ID):",
+        "Parol <b>saqlanmaydi</b> va xabaringiz chatdan darhol o'chiriladi.",
         reply_markup=ReplyKeyboardRemove(),
     )
+    await message.answer("🏛 Qaysi universitetda o'qiysiz?", reply_markup=kb.universities())
+    await state.set_state(Login.university)
+
+
+@router.callback_query(Login.university, F.data.startswith("uni:"))
+async def got_university(callback: CallbackQuery, state: FSMContext):
+    code = callback.data.split(":", 1)[1]
+    if code not in UNIVERSITIES:
+        await callback.answer()
+        return
+    await state.update_data(university=code)
     await state.set_state(Login.login)
+    await callback.message.edit_text(f"🏛 Universitet: <b>{escape(UNIVERSITIES[code].name)}</b>")
+    await callback.message.answer("HEMIS <b>loginingizni</b> yuboring (talaba ID):")
+    await callback.answer()
+
+
+@router.message(Login.university)
+async def university_not_chosen(message: Message):
+    await message.answer("Universitetingizni pastdagi tugmalardan tanlang 👇", reply_markup=kb.universities())
 
 
 @router.message(Login.login, F.text)
@@ -81,12 +100,14 @@ async def got_password(message: Message, state: FSMContext, bot: Bot):
         await message.delete()
     except Exception:
         pass
-    username = (await state.get_data())["login"]
+    data = await state.get_data()
+    username, university = data["login"], data["university"]
+    url = UNIVERSITIES[university].url
     wait = await message.answer("⏳ HEMIS'ga kirilmoqda...")
 
     try:
-        token = await hemis.login(username, password)
-        profile = await hemis.get_profile(token)
+        token = await hemis.login(url, username, password)
+        profile = await hemis.get_profile(hemis.Auth(url, token))
     except hemis.LoginError:
         await wait.edit_text("❌ Login yoki parol noto'g'ri. Qaytadan /start bosing.")
         await state.clear()
@@ -99,7 +120,7 @@ async def got_password(message: Message, state: FSMContext, bot: Bot):
         del password
 
     await state.clear()
-    await db.save_user(message.from_user.id, username, token, profile["full_name"], profile["group"])
+    await db.save_user(message.from_user.id, university, username, token, profile["full_name"], profile["group"])
     await refresh_user(bot, message.from_user.id)
     await check_absences(bot, message.from_user.id)  # mavjud NB'larni eslab qoladi
     await sync_tasks(bot, message.from_user.id)  # mavjud topshiriqlarni eslab qoladi
@@ -195,15 +216,15 @@ async def resources(message: Message, bot: Bot):
 async def _show_subjects(target: Message, bot: Bot, telegram_id: int) -> None:
     """HEMIS'dan yangilab, fanlar ro'yxatini ko'rsatadi (target xabarini tahrirlaydi)."""
     tasks = await sync_tasks(bot, telegram_id, notify_new=False)
+    user = await db.get_user(telegram_id)
     if tasks is None:
-        user = await db.get_user(telegram_id)
         await target.edit_text(HEMIS_DOWN if user and user["token"] else SESSION_EXPIRED)
         return
     current = now()
     try:
         await target.edit_text(
             formatter.tasks_overview(tasks, current),
-            reply_markup=kb.subjects(tasks, current, None, HEMIS_URL),
+            reply_markup=kb.subjects(tasks, current, None, db.university(user).url),
         )
     except TelegramBadRequest:
         pass  # xabar o'zgarmagan
@@ -226,7 +247,7 @@ async def subject_page(callback: CallbackQuery, bot: Bot):
     try:
         await callback.message.edit_text(
             formatter.subject_tasks(tasks, subject_id, current),
-            reply_markup=kb.subjects(tasks, current, subject_id, HEMIS_URL),
+            reply_markup=kb.subjects(tasks, current, subject_id, db.university(user).url),
             disable_web_page_preview=True,
         )
     except TelegramBadRequest:

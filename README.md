@@ -1,6 +1,7 @@
 # Eslatma bot (@eslatmaStudent_bot)
 
-SamDU talabalari uchun Telegram bot. HEMIS'dan olingan ma'lumotlar asosida ishlaydi:
+SamDU va SamSI talabalari uchun Telegram bot. HEMIS'dan olingan ma'lumotlar asosida ishlaydi
+(talaba /start bosganda universitetini tanlaydi):
 
 - 🗓 haftalik dars jadvali (xona, vaqt, o'qituvchi)
 - 📚 fan resurslari: topshiriqlar va muddatlari
@@ -9,6 +10,9 @@ SamDU talabalari uchun Telegram bot. HEMIS'dan olingan ma'lumotlar asosida ishla
 
 Parol saqlanmaydi: bazada faqat shifrlangan HEMIS tokeni turadi.
 
+Yangi universitet qo'shish uchun `config.py` dagi `UNIVERSITIES` ro'yxatiga uning HEMIS
+talaba portali manzilini yozing (masalan `https://student.xxx.uz`).
+
 ## Sozlamalar (`.env`)
 
 `.env.example` dan nusxa olib to'ldiring:
@@ -16,7 +20,6 @@ Parol saqlanmaydi: bazada faqat shifrlangan HEMIS tokeni turadi.
 | O'zgaruvchi | Ma'nosi |
 |---|---|
 | `BOT_TOKEN` | @BotFather bergan token |
-| `HEMIS_URL` | `https://student.samdu.uz` |
 | `SECRET_KEY` | tokenlarni shifrlash kaliti (pastda qanday yaratish yozilgan) |
 | `REMIND_BEFORE` | darsdan necha daqiqa oldin eslatish (standart 5) |
 | `MORNING_TIME` | ertalabki xabar vaqti (standart 07:30) |
@@ -33,6 +36,7 @@ Kerak: Ubuntu 22.04/24.04 VPS, 512 MB RAM yetarli.
 
 ```bash
 curl -sI https://student.samdu.uz | head -1     # "HTTP/... 200" yoki 302 chiqishi kerak
+curl -sI https://student.sies.uz | head -1
 ```
 
 **1. Docker o'rnatish:**
@@ -55,7 +59,7 @@ scp -r bot db hemis services deploy config.py main.py requirements.txt \
 ```bash
 cd /opt/eslatma_bot
 cp .env.example .env
-nano .env          # BOT_TOKEN, HEMIS_URL, SECRET_KEY ni yozing
+nano .env          # BOT_TOKEN va SECRET_KEY ni yozing
 ```
 
 Yangi `SECRET_KEY` yaratish:

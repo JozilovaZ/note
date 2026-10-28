@@ -4,8 +4,8 @@ from datetime import date, datetime
 import aiosqlite
 from cryptography.fernet import Fernet, InvalidToken
 
-from config import DB_PATH, SECRET_KEY, TZ
-from hemis.client import Lesson, Task
+from config import DB_PATH, DEFAULT_UNIVERSITY, SECRET_KEY, TZ, UNIVERSITIES, University
+from hemis.client import Auth, Lesson, Task
 
 _fernet = Fernet(SECRET_KEY.encode())
 _db: aiosqlite.Connection | None = None
@@ -87,6 +87,9 @@ async def init() -> None:
     if "gpa_state" not in columns:
         # JSON: {"2025-2026": ["3.64", 1], ...}; NULL bo'lsa GPA hali olinmagan, xabar yuborilmaydi
         await _db.execute("ALTER TABLE users ADD COLUMN gpa_state TEXT")
+    if "university" not in columns:
+        # config.UNIVERSITIES kaliti; avval kirganlar DEFAULT_UNIVERSITY talabalari
+        await _db.execute(f"ALTER TABLE users ADD COLUMN university TEXT NOT NULL DEFAULT '{DEFAULT_UNIVERSITY}'")
     async with _db.execute("PRAGMA table_info(tasks)") as cur:
         task_columns = {row["name"] for row in await cur.fetchall()}
     if "files" not in task_columns:
@@ -112,22 +115,32 @@ def decrypt_token(value: str | None) -> str | None:
         return None
 
 
-async def save_user(telegram_id: int, login: str, token: str, full_name: str, group: str) -> None:
+def university(user) -> University:
+    return UNIVERSITIES.get(user["university"]) or UNIVERSITIES[DEFAULT_UNIVERSITY]
+
+
+def auth(user) -> Auth | None:
+    """Foydalanuvchining HEMIS manzili va tokeni; token yo'q yoki yaroqsiz bo'lsa None."""
+    token = decrypt_token(user["token"]) if user else None
+    return Auth(university(user).url, token) if token else None
+
+
+async def save_user(telegram_id: int, university: str, login: str, token: str,
+                    full_name: str, group: str) -> None:
+    # boshqa hisob bilan kirilsa (login yoki universitet o'zgarsa), eski holat unutiladi
+    same = "users.hemis_login = excluded.hemis_login AND users.university = excluded.university"
     await _db.execute(
-        """INSERT INTO users (telegram_id, hemis_login, token, full_name, group_name)
-           VALUES (?, ?, ?, ?, ?)
+        f"""INSERT INTO users (telegram_id, university, hemis_login, token, full_name, group_name)
+           VALUES (?, ?, ?, ?, ?, ?)
            ON CONFLICT (telegram_id) DO UPDATE SET
-             absences_synced = CASE WHEN users.hemis_login = excluded.hemis_login
-                                    THEN users.absences_synced ELSE 0 END,
-             tasks_synced = CASE WHEN users.hemis_login = excluded.hemis_login
-                                 THEN users.tasks_synced ELSE 0 END,
-             absence_warned = CASE WHEN users.hemis_login = excluded.hemis_login
-                                   THEN users.absence_warned ELSE 0 END,
-             gpa_state = CASE WHEN users.hemis_login = excluded.hemis_login
-                              THEN users.gpa_state ELSE NULL END,
+             absences_synced = CASE WHEN {same} THEN users.absences_synced ELSE 0 END,
+             tasks_synced = CASE WHEN {same} THEN users.tasks_synced ELSE 0 END,
+             absence_warned = CASE WHEN {same} THEN users.absence_warned ELSE 0 END,
+             gpa_state = CASE WHEN {same} THEN users.gpa_state ELSE NULL END,
+             university = excluded.university,
              hemis_login = excluded.hemis_login, token = excluded.token,
              full_name = excluded.full_name, group_name = excluded.group_name""",
-        (telegram_id, login, _fernet.encrypt(token.encode()).decode(), full_name, group),
+        (telegram_id, university, login, _fernet.encrypt(token.encode()).decode(), full_name, group),
     )
     await _db.commit()
 

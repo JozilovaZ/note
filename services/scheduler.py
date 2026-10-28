@@ -35,11 +35,11 @@ def now() -> datetime:
 async def refresh_user(bot: Bot, telegram_id: int) -> bool:
     """Foydalanuvchi jadvalini HEMIS'dan yangilaydi. Muvaffaqiyatli bo'lsa True."""
     user = await db.get_user(telegram_id)
-    token = db.decrypt_token(user["token"]) if user else None
-    if not token:
+    auth = db.auth(user)
+    if not auth:
         return False
     try:
-        lessons = await hemis.get_schedule(token)
+        lessons = await hemis.get_schedule(auth)
     except hemis.TokenExpired:
         await db.invalidate_token(telegram_id)
         await _send(bot, telegram_id, RELOGIN_TEXT)
@@ -58,11 +58,11 @@ def _absence_key(a: hemis.Absence) -> str:
 async def check_absences(bot: Bot, telegram_id: int) -> None:
     """Davomatni oldingi holat bilan solishtiradi va yangi NB haqida xabar beradi."""
     user = await db.get_user(telegram_id)
-    token = db.decrypt_token(user["token"]) if user else None
-    if not token:
+    auth = db.auth(user)
+    if not auth:
         return
     try:
-        absences = await hemis.get_attendance(token)
+        absences = await hemis.get_attendance(auth)
     except hemis.TokenExpired:
         await db.invalidate_token(telegram_id)
         await _send(bot, telegram_id, RELOGIN_TEXT)
@@ -105,11 +105,11 @@ async def _warn_absence_limit(bot: Bot, telegram_id: int, absences: list[hemis.A
 async def check_gpa(bot: Bot, telegram_id: int) -> None:
     """GPA'ni oldingi holat bilan solishtiradi: yangi yil GPA'si yoki o'zgarish bo'lsa xabar beradi."""
     user = await db.get_user(telegram_id)
-    token = db.decrypt_token(user["token"]) if user else None
-    if not token:
+    auth = db.auth(user)
+    if not auth:
         return
     try:
-        items = await hemis.get_gpa(token)
+        items = await hemis.get_gpa(auth)
     except hemis.TokenExpired:
         await db.invalidate_token(telegram_id)
         await _send(bot, telegram_id, RELOGIN_TEXT)
@@ -134,11 +134,11 @@ async def check_gpa(bot: Bot, telegram_id: int) -> None:
 async def sync_tasks(bot: Bot, telegram_id: int, notify_new: bool = True) -> list[hemis.Task] | None:
     """Topshiriqlarni HEMIS'dan oladi, yangilari haqida xabar beradi va saqlaydi."""
     user = await db.get_user(telegram_id)
-    token = db.decrypt_token(user["token"]) if user else None
-    if not token:
+    auth = db.auth(user)
+    if not auth:
         return None
     try:
-        tasks = await hemis.get_tasks(token)
+        tasks = await hemis.get_tasks(auth)
     except hemis.TokenExpired:
         await db.invalidate_token(telegram_id)
         await _send(bot, telegram_id, RELOGIN_TEXT)
