@@ -1,7 +1,7 @@
 import logging
 import re
 from collections import Counter
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from html import escape
 
 from aiogram import Bot, F, Router
@@ -12,7 +12,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, CallbackQuery, Message, ReplyKeyboardRemove
 
 from bot import keyboards as kb
-from config import ABSENCE_LIMIT, DEFAULT_UNIVERSITY, MORNING_TIME, REMIND_BEFORE, UNIVERSITIES
+from config import ABSENCE_LIMIT, MORNING_TIME, REMIND_BEFORE, UNIVERSITIES
 from db import database as db
 from hemis import client as hemis
 from services import formatter
@@ -67,7 +67,7 @@ async def start(message: Message, state: FSMContext):
         "Parol <b>saqlanmaydi</b> va xabaringiz chatdan darhol o'chiriladi.",
         reply_markup=ReplyKeyboardRemove(),
     )
-    await message.answer("🏛 Qaysi universitetda o'qiysiz?", reply_markup=kb.universities())
+    await message.answer(kb.universities_text(), reply_markup=kb.universities())
     await state.set_state(Login.university)
 
 
@@ -80,37 +80,14 @@ async def got_university(callback: CallbackQuery, state: FSMContext):
     await state.update_data(university=code)
     await state.set_state(Login.login)
     await callback.message.edit_text(f"🏛 Universitet: <b>{escape(UNIVERSITIES[code].name)}</b>")
-    await callback.message.answer("HEMIS <b>loginingizni</b> yuboring (talaba ID):", reply_markup=kb.no_password)
-    await callback.answer()
-
-
-ONEID_HELP = (
-    "🆔 <b>OneID bilan kirsangiz</b>\n\n"
-    "Bot HEMIS'ga faqat login va parol orqali ulana oladi: HEMIS OneID'ni faqat o'z saytida "
-    "qo'llab-quvvatlaydi, botlar va ilovalar uchun emas.\n\n"
-    "Parol olish uchun:\n"
-    "1. Pastdagi tugma orqali HEMIS'ni oching va <b>OneID orqali</b> kiring.\n"
-    "2. Profil bo'limida parolni o'zgartirish imkoni bo'lsa, yangi parol o'rnating.\n"
-    "3. Bunday imkon bo'lmasa, parolni tiklash uchun dekanat yoki tyutoringizga murojaat qiling.\n\n"
-    "Login — bu talaba ID raqamingiz (HEMIS profilida ko'rsatilgan).\n\n"
-    "Parol tayyor bo'lgach, shu yerga <b>loginingizni</b> yuboring yoki /start bosing."
-)
-
-
-@router.callback_query(F.data == kb.ONEID)
-async def oneid_help(callback: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    university = UNIVERSITIES.get(data.get("university")) or UNIVERSITIES[DEFAULT_UNIVERSITY]
-    if await state.get_state() == Login.password.state:
-        await state.set_state(Login.login)  # login allaqachon yuborilgan bo'lsa, boshidan
-    await callback.message.answer(ONEID_HELP, reply_markup=kb.oneid_help(university.url))
+    await callback.message.answer("HEMIS <b>loginingizni</b> yuboring (talaba ID):")
     await callback.answer()
 
 
 @router.callback_query(Login.password, F.data == kb.CHANGE_LOGIN)
 async def change_login(callback: CallbackQuery, state: FSMContext):
     await state.set_state(Login.login)
-    await callback.message.answer("HEMIS <b>loginingizni</b> yuboring (talaba ID):", reply_markup=kb.no_password)
+    await callback.message.answer("HEMIS <b>loginingizni</b> yuboring (talaba ID):")
     await callback.answer()
 
 
@@ -130,7 +107,19 @@ async def got_login(message: Message, state: FSMContext):
         "\n\n⚠️ Login odatda faqat raqamlardan iborat <b>talaba ID</b> bo'ladi "
         "(HEMIS profilida yozilgan). Noto'g'ri bo'lsa, /start bosib qaytadan boshlang."
     )
-    await message.answer(f"Endi <b>parolingizni</b> yuboring:{hint}", reply_markup=kb.no_password)
+    await message.answer(f"Endi <b>parolingizni</b> yuboring:{hint}")
+
+
+RATE_LIMIT_PAUSE = timedelta(minutes=5)
+_rate_limited_until: dict[str, datetime] = {}  # universitet -> HEMIS'ga qayta urinish mumkin bo'lgan vaqt
+
+
+def _rate_limited_text(until: datetime) -> str:
+    return (
+        "⏳ HEMIS ko'p kirish urinishlari sababli botga vaqtincha cheklov qo'ydi. "
+        "Bu sizning parolingiz bilan bog'liq emas.\n\n"
+        f"Iltimos, <b>{until:%H:%M}</b> dan keyin <b>parolingizni</b> qayta yuboring."
+    )
 
 
 def _mask(username: str) -> str:
@@ -147,11 +136,22 @@ async def got_password(message: Message, state: FSMContext, bot: Bot):
     data = await state.get_data()
     username, university = data["login"], data["university"]
     url = UNIVERSITIES[university].url
+    until = _rate_limited_until.get(university)
+    if until and now() < until:
+        # cheklov paytida urinish uni uzaytiradi, shuning uchun HEMIS'ga yubormaymiz
+        await message.answer(_rate_limited_text(until), reply_markup=kb.wrong_password)
+        return
     wait = await message.answer("⏳ HEMIS'ga kirilmoqda...")
 
     try:
         token = await hemis.login(url, username, password)
         profile = await hemis.get_profile(hemis.Auth(url, token))
+    except hemis.RateLimited:
+        until = _rate_limited_until[university] = now() + RATE_LIMIT_PAUSE
+        log.warning("Login: %s HEMIS'i captcha talab qilyapti (429), kirish %s gacha to'xtatildi",
+                    university, f"{until:%H:%M}")
+        await wait.edit_text(_rate_limited_text(until), reply_markup=kb.wrong_password)
+        return  # holat Login.password'da qoladi, keyin faqat parolni yuborish kifoya
     except hemis.LoginError:
         log.info("Login xato: user=%s uni=%s login=%s", message.from_user.id, university, _mask(username))
         await wait.edit_text(

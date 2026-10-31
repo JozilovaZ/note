@@ -28,6 +28,20 @@ class University(NamedTuple):
 UNIVERSITIES = {
     "samdu": University("SamDU", "Samarqand davlat universiteti", "https://student.samdu.uz"),
     "samsi": University("SamSI", "Samarqand iqtisodiyot va servis instituti", "https://student.sies.uz"),
+    "samdtu": University("SamDTU", "Samarqand davlat tibbiyot universiteti", "https://student.sammu.uz"),
+    "samdaqu": University("SamDAQU", "Samarqand davlat arxitektura-qurilish universiteti",
+                          "https://student.samdaqu.edu.uz"),
+    "samdchti": University("SamDChTI", "Samarqand davlat chet tillar instituti", "https://student.samdchti.uz"),
+    "silkroad": University("Ipak yo'li", "\"Ipak yo'li\" turizm va madaniy meros xalqaro universiteti",
+                           "https://student.univ-silkroad.uz"),
+    "samdpi": University("SamDPI", "Samarqand davlat pedagogika instituti", "https://student.samdpi.uz"),
+    "samvmi": University("SamDVMChBU", "Samarqand davlat veterinariya meditsinasi, chorvachilik va "
+                         "biotexnologiyalar universiteti", "https://student.otmsamvmi.uz"),
+    "uzfi": University("O'zFinPI", "O'zbekiston-Finlandiya pedagogika instituti", "https://student.uzfi.uz"),
+    "saiti": University("SAITI", "Samarqand agroinnovatsiyalar va tadqiqotlar instituti",
+                        "https://student.samaguni.uz"),
+    # student.katdpi.uz shu manzilga yo'naltiradi; POST yo'naltirishda yo'qolgani uchun to'g'ridan-to'g'ri
+    "kdpi": University("KDPI", "Kattaqo'rg'on davlat pedagogika instituti", "https://student.samdukf.uz"),
 }
 # universitet tanlash qo'shilishidan oldin kirgan foydalanuvchilar uchun
 DEFAULT_UNIVERSITY = "samdu"

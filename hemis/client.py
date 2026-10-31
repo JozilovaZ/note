@@ -29,6 +29,14 @@ class TokenExpired(HemisError):
     """Token eskirgan, foydalanuvchi qayta kirishi kerak."""
 
 
+class RateLimited(HemisError):
+    """HTTP 429: bitta IP'dan ko'p urinish bo'lgani uchun HEMIS captcha talab qilyapti.
+
+    Bot hamma talabalar uchun bitta server IP'sidan kiradi, shuning uchun bu cheklov
+    shu universitetning barcha foydalanuvchilariga ta'sir qiladi.
+    """
+
+
 @dataclass
 class Lesson:
     day: date
@@ -64,6 +72,8 @@ async def _request(method: str, base_url: str, path: str, token: str | None = No
             async with session.request(method, url, headers=headers, **kwargs) as resp:
                 if resp.status == 401:
                     raise TokenExpired()
+                if resp.status == 429:
+                    raise RateLimited("HEMIS ko'p urinish sababli vaqtincha captcha talab qilyapti")
                 try:
                     body = await resp.json(content_type=None)
                 except ValueError:

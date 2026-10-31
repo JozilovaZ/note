@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError
 
-from config import ABSENCE_LIMIT, MORNING_TIME, REMIND_BEFORE, TZ
+from config import ABSENCE_LIMIT, DEFAULT_UNIVERSITY, MORNING_TIME, REMIND_BEFORE, TZ, UNIVERSITIES
 from db import database as db
 from hemis import client as hemis
 from services import formatter
@@ -200,18 +200,58 @@ async def _send(bot: Bot, telegram_id: int, text: str) -> None:
         log.exception("Xabar yuborilmadi: %s", telegram_id)
 
 
-async def _sync_all(bot: Bot, telegram_ids: list[int], schedule: bool = False,
-                    absences: bool = False, tasks: bool = False, gpa: bool = False) -> None:
-    for tid in telegram_ids:
-        if schedule:
-            await refresh_user(bot, tid)
-        if absences:
-            await check_absences(bot, tid)
-        if tasks:
-            await sync_tasks(bot, tid)
-        if gpa:
-            await check_gpa(bot, tid)
-        await asyncio.sleep(1)  # HEMIS'ni ortiqcha yuklamaslik uchun
+SYNC_KINDS = ("schedule", "absences", "tasks", "gpa")  # bitta talaba uchun shu tartibda bajariladi
+_pending: dict[str, set[str]] = {}  # universitet -> navbatdagi tekshiruvlar
+_running: set[str] = set()          # hozir ishlayotgan universitetlar
+_workers: set[asyncio.Task] = set()  # vazifalar axlat yig'uvchi tomonidan o'chirilmasligi uchun
+
+
+def _uni_code(user) -> str:
+    return user["university"] if user["university"] in UNIVERSITIES else DEFAULT_UNIVERSITY
+
+
+def _request_sync(bot: Bot, users, kinds: set[str]) -> None:
+    """Har bir universitet o'z HEMIS serverida, shuning uchun ular parallel tekshiriladi.
+
+    Bitta universitet ichida talabalar ketma-ket (HEMIS'ni ortiqcha yuklamaslik uchun).
+    Oldingi aylanish tugamagan bo'lsa, yangi so'rov navbatga qo'shiladi va ustma-ust tushmaydi.
+    """
+    for uni in {_uni_code(u) for u in users}:
+        queued = _pending.setdefault(uni, set())
+        if uni in _running and kinds <= queued:
+            log.warning("%s: oldingi tekshiruv hali tugamadi, %s navbatda", uni, ", ".join(sorted(kinds)))
+        queued |= kinds
+        if uni not in _running:
+            _running.add(uni)
+            task = asyncio.create_task(_sync_university(bot, uni))
+            _workers.add(task)
+            task.add_done_callback(_workers.discard)
+
+
+async def _sync_university(bot: Bot, uni: str) -> None:
+    try:
+        while _pending.get(uni):
+            kinds = _pending.pop(uni)
+            started = now()
+            users = [u for u in await db.logged_in_users() if _uni_code(u) == uni]
+            for user in users:
+                tid = user["telegram_id"]
+                try:
+                    if "schedule" in kinds:
+                        await refresh_user(bot, tid)
+                    if "absences" in kinds:
+                        await check_absences(bot, tid)
+                    if "tasks" in kinds:
+                        await sync_tasks(bot, tid)
+                    if "gpa" in kinds:
+                        await check_gpa(bot, tid)
+                except Exception:
+                    log.exception("%s: talaba %s tekshirilmadi", uni, tid)
+                await asyncio.sleep(1)  # HEMIS'ni ortiqcha yuklamaslik uchun
+            log.info("%s: %d talaba tekshirildi (%s), %.0f s", uni, len(users),
+                     ", ".join(k for k in SYNC_KINDS if k in kinds), (now() - started).total_seconds())
+    finally:
+        _running.discard(uni)
 
 
 async def _tick(bot: Bot) -> None:
@@ -230,8 +270,8 @@ async def _tick(bot: Bot) -> None:
     gpa_due = hhmm == GPA_TIME
     if schedule_due or absences_due or tasks_due or gpa_due:
         # alohida vazifada, eslatmalar kechikmasligi uchun
-        asyncio.create_task(_sync_all(bot, [u["telegram_id"] for u in users],
-                                      schedule_due, absences_due, tasks_due, gpa_due))
+        due = {"schedule": schedule_due, "absences": absences_due, "tasks": tasks_due, "gpa": gpa_due}
+        _request_sync(bot, users, {k for k, v in due.items() if v})
 
     for user in users:
         if not user["notify"]:
@@ -257,8 +297,7 @@ async def _tick(bot: Bot) -> None:
 
 async def run(bot: Bot) -> None:
     # ishga tushganda davomatni darhol tekshirish (yangi foydalanuvchilar uchun boshlang'ich holat)
-    users = await db.logged_in_users()
-    asyncio.create_task(_sync_all(bot, [u["telegram_id"] for u in users], absences=True, tasks=True, gpa=True))
+    _request_sync(bot, await db.logged_in_users(), {"absences", "tasks", "gpa"})
     while True:
         try:
             await _tick(bot)

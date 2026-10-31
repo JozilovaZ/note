@@ -29,31 +29,22 @@ main = ReplyKeyboardMarkup(
 
 
 def universities() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"🏛 {u.short} — {u.name}", callback_data=f"uni:{code}")]
-        for code, u in UNIVERSITIES.items()
-    ])
+    """Ikki ustunda, faqat qisqa nomi bilan (to'liq nomlar xabar matnida)."""
+    buttons = [InlineKeyboardButton(text=f"🏛 {u.short}", callback_data=f"uni:{code}")
+               for code, u in UNIVERSITIES.items()]
+    return InlineKeyboardMarkup(inline_keyboard=[buttons[i:i + 2] for i in range(0, len(buttons), 2)])
 
 
-ONEID = "oneid"
-
-no_password = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="🆔 Parolim yo'q, OneID bilan kiraman", callback_data=ONEID)],
-])
+def universities_text() -> str:
+    lines = "\n".join(f"• <b>{u.short}</b> — {u.name}" for u in UNIVERSITIES.values())
+    return f"🏛 Qaysi universitetda o'qiysiz?\n\n{lines}"
 
 
 CHANGE_LOGIN = "change_login"
 
 wrong_password = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="✏️ Loginni o'zgartirish", callback_data=CHANGE_LOGIN)],
-    [InlineKeyboardButton(text="🆔 Parolim yo'q, OneID bilan kiraman", callback_data=ONEID)],
 ])
-
-
-def oneid_help(hemis_url: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🌐 HEMIS'ni ochish", url=f"{hemis_url}/dashboard/login")],
-    ])
 
 
 def subjects(tasks: list, current, selected: int | None, hemis_url: str) -> InlineKeyboardMarkup:
