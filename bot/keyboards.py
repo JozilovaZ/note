@@ -42,6 +42,14 @@ no_password = InlineKeyboardMarkup(inline_keyboard=[
 ])
 
 
+CHANGE_LOGIN = "change_login"
+
+wrong_password = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="✏️ Loginni o'zgartirish", callback_data=CHANGE_LOGIN)],
+    [InlineKeyboardButton(text="🆔 Parolim yo'q, OneID bilan kiraman", callback_data=ONEID)],
+])
+
+
 def oneid_help(hemis_url: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🌐 HEMIS'ni ochish", url=f"{hemis_url}/dashboard/login")],

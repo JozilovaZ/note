@@ -1,3 +1,5 @@
+import logging
+import re
 from collections import Counter
 from datetime import date, timedelta
 from html import escape
@@ -17,6 +19,7 @@ from services import formatter
 from services.scheduler import check_absences, check_gpa, now, refresh_user, sync_tasks
 
 router = Router()
+log = logging.getLogger(__name__)
 
 NOT_LOGGED_IN = "Avval HEMIS'ga kiring: /start"
 SESSION_EXPIRED = "⚠️ HEMIS sessiyangiz tugadi. /start bosib qayta kiring."
@@ -104,6 +107,13 @@ async def oneid_help(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+@router.callback_query(Login.password, F.data == kb.CHANGE_LOGIN)
+async def change_login(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(Login.login)
+    await callback.message.answer("HEMIS <b>loginingizni</b> yuboring (talaba ID):", reply_markup=kb.no_password)
+    await callback.answer()
+
+
 @router.message(Login.university)
 async def university_not_chosen(message: Message):
     await message.answer("Universitetingizni pastdagi tugmalardan tanlang 👇", reply_markup=kb.universities())
@@ -111,9 +121,20 @@ async def university_not_chosen(message: Message):
 
 @router.message(Login.login, F.text)
 async def got_login(message: Message, state: FSMContext):
-    await state.update_data(login=message.text.strip())
+    username = message.text.strip()
+    if re.fullmatch(r"[\d\s-]+", username):
+        username = re.sub(r"[\s-]", "", username)  # "3122 2110 0123" -> "312221100123"
+    await state.update_data(login=username)
     await state.set_state(Login.password)
-    await message.answer("Endi <b>parolingizni</b> yuboring:", reply_markup=kb.no_password)
+    hint = "" if username.isdigit() else (
+        "\n\n⚠️ Login odatda faqat raqamlardan iborat <b>talaba ID</b> bo'ladi "
+        "(HEMIS profilida yozilgan). Noto'g'ri bo'lsa, /start bosib qaytadan boshlang."
+    )
+    await message.answer(f"Endi <b>parolingizni</b> yuboring:{hint}", reply_markup=kb.no_password)
+
+
+def _mask(username: str) -> str:
+    return f"{'*' * max(len(username) - 3, 0)}{username[-3:]} (uzunligi {len(username)})"
 
 
 @router.message(Login.password, F.text)
@@ -132,12 +153,30 @@ async def got_password(message: Message, state: FSMContext, bot: Bot):
         token = await hemis.login(url, username, password)
         profile = await hemis.get_profile(hemis.Auth(url, token))
     except hemis.LoginError:
-        await wait.edit_text("❌ Login yoki parol noto'g'ri. <b>Loginingizni</b> qaytadan yuboring.\n\n"
-                             "HEMIS'ga OneID bilan kirib, parolingizni bilmasangiz, pastdagi tugmani bosing.",
-                             reply_markup=kb.no_password)
-        await state.set_state(Login.login)  # universitet tanlovi saqlanadi
+        log.info("Login xato: user=%s uni=%s login=%s", message.from_user.id, university, _mask(username))
+        await wait.edit_text(
+            f"❌ <b>{escape(UNIVERSITIES[university].short)}</b> HEMIS'i login yoki parolni qabul qilmadi.\n\n"
+            "Tekshiring:\n"
+            "• Universitet to'g'ri tanlanganmi? Noto'g'ri bo'lsa, /start bosing.\n"
+            "• Login — talaba ID raqami (ism yoki telefon emas).\n"
+            "• Parolda katta-kichik harf farq qiladi. Telefon birinchi harfni o'zi katta qilib "
+            "qo'ymaganini tekshiring.\n"
+            "• HEMIS saytiga shu login-parol bilan kira olasizmi?\n\n"
+            f"Login: <code>{escape(username)}</code>\n"
+            "<b>Parolingizni</b> qaytadan kiriting:",
+            reply_markup=kb.wrong_password,
+        )
+        await state.set_state(Login.password)  # login va universitet saqlanadi
+        return
+    except hemis.ApiError as e:
+        log.warning("Login rad etildi: user=%s uni=%s login=%s xato=%s",
+                    message.from_user.id, university, _mask(username), e)
+        await wait.edit_text(f"❌ HEMIS kirishni rad etdi:\n<i>{escape(str(e))}</i>\n\n"
+                             "Bu HEMIS tomonidagi cheklov, dekanat yoki tyutoringizga murojaat qiling.")
+        await state.clear()
         return
     except hemis.HemisError as e:
+        log.warning("Login: HEMIS ishlamadi: user=%s uni=%s xato=%s", message.from_user.id, university, e)
         await wait.edit_text(f"⚠️ HEMIS bilan bog'lanib bo'lmadi, keyinroq urinib ko'ring.\n<i>{escape(str(e))}</i>")
         await state.clear()
         return

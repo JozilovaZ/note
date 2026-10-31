@@ -78,9 +78,13 @@ async def _request(method: str, base_url: str, path: str, token: str | None = No
 
 
 async def login(base_url: str, username: str, password: str) -> str:
+    """Noto'g'ri login/parolga HEMIS HTTP 401 qaytaradi -> LoginError.
+
+    Boshqa rad etishlar (masalan, talaba faol emas) ApiError bo'lib, HEMIS matni bilan chiqadi.
+    """
     try:
         data = await _request("POST", base_url, "auth/login", json={"login": username, "password": password})
-    except (ApiError, TokenExpired) as e:
+    except TokenExpired as e:
         raise LoginError() from e
     token = (data or {}).get("token")
     if not token:
