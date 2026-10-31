@@ -6,6 +6,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.types import BotCommand
 
+from bot import admin
 from bot.handlers import router
 from config import BOT_TOKEN
 from db import database as db
@@ -30,6 +31,10 @@ async def main() -> None:
     await db.init()
     bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
+    activity = admin.ActivityMiddleware()
+    dp.message.outer_middleware(activity)
+    dp.callback_query.outer_middleware(activity)
+    dp.include_router(admin.router)  # faqat ADMIN_IDS uchun; boshqalar keyingi routerga o'tadi
     dp.include_router(router)
     await bot.set_my_commands(COMMANDS)
 

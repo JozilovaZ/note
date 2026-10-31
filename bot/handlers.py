@@ -147,12 +147,14 @@ async def got_password(message: Message, state: FSMContext, bot: Bot):
         token = await hemis.login(url, username, password)
         profile = await hemis.get_profile(hemis.Auth(url, token))
     except hemis.RateLimited:
+        await db.count("login_captcha", university)
         until = _rate_limited_until[university] = now() + RATE_LIMIT_PAUSE
         log.warning("Login: %s HEMIS'i captcha talab qilyapti (429), kirish %s gacha to'xtatildi",
                     university, f"{until:%H:%M}")
         await wait.edit_text(_rate_limited_text(until), reply_markup=kb.wrong_password)
         return  # holat Login.password'da qoladi, keyin faqat parolni yuborish kifoya
     except hemis.LoginError:
+        await db.count("login_fail", university)
         log.info("Login xato: user=%s uni=%s login=%s", message.from_user.id, university, _mask(username))
         await wait.edit_text(
             f"❌ <b>{escape(UNIVERSITIES[university].short)}</b> HEMIS'i login yoki parolni qabul qilmadi.\n\n"
@@ -169,6 +171,7 @@ async def got_password(message: Message, state: FSMContext, bot: Bot):
         await state.set_state(Login.password)  # login va universitet saqlanadi
         return
     except hemis.ApiError as e:
+        await db.count("login_error", university)
         log.warning("Login rad etildi: user=%s uni=%s login=%s xato=%s",
                     message.from_user.id, university, _mask(username), e)
         await wait.edit_text(f"❌ HEMIS kirishni rad etdi:\n<i>{escape(str(e))}</i>\n\n"
@@ -176,6 +179,7 @@ async def got_password(message: Message, state: FSMContext, bot: Bot):
         await state.clear()
         return
     except hemis.HemisError as e:
+        await db.count("login_error", university)
         log.warning("Login: HEMIS ishlamadi: user=%s uni=%s xato=%s", message.from_user.id, university, e)
         await wait.edit_text(f"⚠️ HEMIS bilan bog'lanib bo'lmadi, keyinroq urinib ko'ring.\n<i>{escape(str(e))}</i>")
         await state.clear()
@@ -185,6 +189,7 @@ async def got_password(message: Message, state: FSMContext, bot: Bot):
 
     await state.clear()
     await db.save_user(message.from_user.id, university, username, token, profile["full_name"], profile["group"])
+    await db.count("login_ok", university)
     await refresh_user(bot, message.from_user.id)
     await check_absences(bot, message.from_user.id)  # mavjud NB'larni eslab qoladi
     await sync_tasks(bot, message.from_user.id)  # mavjud topshiriqlarni eslab qoladi
@@ -202,6 +207,9 @@ async def got_password(message: Message, state: FSMContext, bot: Bot):
 @router.message(Command("chiqish"))
 async def logout(message: Message, state: FSMContext):
     await state.clear()
+    user = await db.get_user(message.from_user.id)
+    if user:
+        await db.count("logout", user["university"])
     await db.delete_user(message.from_user.id)
     await message.answer(
         "Barcha ma'lumotlaringiz o'chirildi. Qayta foydalanish uchun /start bosing.",

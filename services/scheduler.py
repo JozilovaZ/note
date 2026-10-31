@@ -195,7 +195,7 @@ async def _send(bot: Bot, telegram_id: int, text: str) -> None:
         await bot.send_message(telegram_id, text)
     except TelegramForbiddenError:
         # foydalanuvchi botni bloklagan
-        await db.set_notify(telegram_id, False)
+        await db.set_blocked(telegram_id)
     except Exception:
         log.exception("Xabar yuborilmadi: %s", telegram_id)
 

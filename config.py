@@ -16,6 +16,8 @@ def _required(name: str) -> str:
 
 BOT_TOKEN = _required("BOT_TOKEN")
 SECRET_KEY = _required("SECRET_KEY")
+# /stats buyrug'idan foydalana oladigan Telegram ID'lar, vergul bilan: ADMIN_IDS=123,456
+ADMIN_IDS = frozenset(int(x) for x in os.getenv("ADMIN_IDS", "").replace(" ", "").split(",") if x.isdigit())
 
 
 class University(NamedTuple):

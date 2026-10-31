@@ -62,6 +62,14 @@ CREATE TABLE IF NOT EXISTS sent (
     key          TEXT NOT NULL,
     PRIMARY KEY (telegram_id, key)
 );
+-- admin statistikasi uchun kunlik hisoblagichlar (kirish urinishlari va h.k.)
+CREATE TABLE IF NOT EXISTS counters (
+    day          TEXT NOT NULL,     -- YYYY-MM-DD
+    kind         TEXT NOT NULL,     -- login_ok, login_fail, login_captcha, login_error, logout
+    university   TEXT NOT NULL,
+    count        INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, kind, university)
+);
 """
 
 
@@ -90,6 +98,14 @@ async def init() -> None:
     if "university" not in columns:
         # config.UNIVERSITIES kaliti; avval kirganlar DEFAULT_UNIVERSITY talabalari
         await _db.execute(f"ALTER TABLE users ADD COLUMN university TEXT NOT NULL DEFAULT '{DEFAULT_UNIVERSITY}'")
+    if "created_at" not in columns:
+        # YYYY-MM-DD; statistika qo'shilishidan oldin kirganlarda NULL
+        await _db.execute("ALTER TABLE users ADD COLUMN created_at TEXT")
+    if "last_seen" not in columns:
+        await _db.execute("ALTER TABLE users ADD COLUMN last_seen TEXT")  # YYYY-MM-DD
+    if "blocked" not in columns:
+        # 1 bo'lsa foydalanuvchi botni bloklagan (xabar yuborib bo'lmadi)
+        await _db.execute("ALTER TABLE users ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0")
     async with _db.execute("PRAGMA table_info(tasks)") as cur:
         task_columns = {row["name"] for row in await cur.fetchall()}
     if "files" not in task_columns:
@@ -130,8 +146,9 @@ async def save_user(telegram_id: int, university: str, login: str, token: str,
     # boshqa hisob bilan kirilsa (login yoki universitet o'zgarsa), eski holat unutiladi
     same = "users.hemis_login = excluded.hemis_login AND users.university = excluded.university"
     await _db.execute(
-        f"""INSERT INTO users (telegram_id, university, hemis_login, token, full_name, group_name)
-           VALUES (?, ?, ?, ?, ?, ?)
+        f"""INSERT INTO users (telegram_id, university, hemis_login, token, full_name, group_name,
+                              created_at, last_seen)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT (telegram_id) DO UPDATE SET
              absences_synced = CASE WHEN {same} THEN users.absences_synced ELSE 0 END,
              tasks_synced = CASE WHEN {same} THEN users.tasks_synced ELSE 0 END,
@@ -140,9 +157,76 @@ async def save_user(telegram_id: int, university: str, login: str, token: str,
              university = excluded.university,
              hemis_login = excluded.hemis_login, token = excluded.token,
              full_name = excluded.full_name, group_name = excluded.group_name""",
-        (telegram_id, university, login, _fernet.encrypt(token.encode()).decode(), full_name, group),
+        (telegram_id, university, login, _fernet.encrypt(token.encode()).decode(), full_name, group,
+         _today(), _today()),
     )
     await _db.commit()
+
+
+def _today() -> str:
+    return datetime.now(TZ).date().isoformat()
+
+
+async def touch(telegram_id: int) -> None:
+    """Foydalanuvchi bugun botdan foydalandi (botni qayta ochgan bo'lsa, bloklanmagan)."""
+    await _db.execute("UPDATE users SET last_seen = ?, blocked = 0 WHERE telegram_id = ?", (_today(), telegram_id))
+    await _db.commit()
+
+
+async def set_blocked(telegram_id: int) -> None:
+    await _db.execute("UPDATE users SET blocked = 1, notify = 0 WHERE telegram_id = ?", (telegram_id,))
+    await _db.commit()
+
+
+async def count(kind: str, university: str) -> None:
+    await _db.execute(
+        """INSERT INTO counters (day, kind, university, count) VALUES (?, ?, ?, 1)
+           ON CONFLICT (day, kind, university) DO UPDATE SET count = count + 1""",
+        (_today(), kind, university),
+    )
+    await _db.commit()
+
+
+async def _scalar(sql: str, *params) -> int:
+    async with _db.execute(sql, params) as cur:
+        row = await cur.fetchone()
+        return int(row[0] or 0) if row else 0
+
+
+async def stats(today: date) -> dict:
+    """Admin uchun umumiy ko'rsatkichlar."""
+    def since(days: int) -> str:
+        return date.fromordinal(today.toordinal() - days + 1).isoformat()
+
+    result = {
+        "total": await _scalar("SELECT COUNT(*) FROM users"),
+        "active_session": await _scalar("SELECT COUNT(*) FROM users WHERE token IS NOT NULL"),
+        "blocked": await _scalar("SELECT COUNT(*) FROM users WHERE blocked = 1"),
+        "notify_on": await _scalar("SELECT COUNT(*) FROM users WHERE notify = 1 AND token IS NOT NULL"),
+        "new": {d: await _scalar("SELECT COUNT(*) FROM users WHERE created_at >= ?", since(d)) for d in (1, 7, 30)},
+        "seen": {d: await _scalar("SELECT COUNT(*) FROM users WHERE last_seen >= ?", since(d)) for d in (1, 7, 30)},
+    }
+    async with _db.execute(
+        """SELECT university, COUNT(*) AS total, SUM(token IS NOT NULL) AS active,
+                  SUM(last_seen >= ?) AS seen_week, SUM(created_at >= ?) AS new_week
+           FROM users GROUP BY university ORDER BY total DESC""",
+        (since(7), since(7)),
+    ) as cur:
+        result["universities"] = [dict(r) for r in await cur.fetchall()]
+    logins = {}
+    for d in (1, 7):
+        async with _db.execute(
+            "SELECT kind, SUM(count) AS n FROM counters WHERE day >= ? GROUP BY kind", (since(d),)
+        ) as cur:
+            logins[d] = {r["kind"]: int(r["n"]) for r in await cur.fetchall()}
+    result["logins"] = logins
+    async with _db.execute(
+        """SELECT university, SUM(count) AS n FROM counters
+           WHERE day >= ? AND kind = 'login_captcha' GROUP BY university ORDER BY n DESC""",
+        (since(7),),
+    ) as cur:
+        result["captcha_by_uni"] = [(r["university"], int(r["n"])) for r in await cur.fetchall()]
+    return result
 
 
 async def get_user(telegram_id: int) -> aiosqlite.Row | None:
