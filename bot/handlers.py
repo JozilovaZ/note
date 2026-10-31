@@ -10,7 +10,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import BufferedInputFile, CallbackQuery, Message, ReplyKeyboardRemove
 
 from bot import keyboards as kb
-from config import ABSENCE_LIMIT, MORNING_TIME, REMIND_BEFORE, UNIVERSITIES
+from config import ABSENCE_LIMIT, DEFAULT_UNIVERSITY, MORNING_TIME, REMIND_BEFORE, UNIVERSITIES
 from db import database as db
 from hemis import client as hemis
 from services import formatter
@@ -77,7 +77,30 @@ async def got_university(callback: CallbackQuery, state: FSMContext):
     await state.update_data(university=code)
     await state.set_state(Login.login)
     await callback.message.edit_text(f"🏛 Universitet: <b>{escape(UNIVERSITIES[code].name)}</b>")
-    await callback.message.answer("HEMIS <b>loginingizni</b> yuboring (talaba ID):")
+    await callback.message.answer("HEMIS <b>loginingizni</b> yuboring (talaba ID):", reply_markup=kb.no_password)
+    await callback.answer()
+
+
+ONEID_HELP = (
+    "🆔 <b>OneID bilan kirsangiz</b>\n\n"
+    "Bot HEMIS'ga faqat login va parol orqali ulana oladi: HEMIS OneID'ni faqat o'z saytida "
+    "qo'llab-quvvatlaydi, botlar va ilovalar uchun emas.\n\n"
+    "Parol olish uchun:\n"
+    "1. Pastdagi tugma orqali HEMIS'ni oching va <b>OneID orqali</b> kiring.\n"
+    "2. Profil bo'limida parolni o'zgartirish imkoni bo'lsa, yangi parol o'rnating.\n"
+    "3. Bunday imkon bo'lmasa, parolni tiklash uchun dekanat yoki tyutoringizga murojaat qiling.\n\n"
+    "Login — bu talaba ID raqamingiz (HEMIS profilida ko'rsatilgan).\n\n"
+    "Parol tayyor bo'lgach, shu yerga <b>loginingizni</b> yuboring yoki /start bosing."
+)
+
+
+@router.callback_query(F.data == kb.ONEID)
+async def oneid_help(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    university = UNIVERSITIES.get(data.get("university")) or UNIVERSITIES[DEFAULT_UNIVERSITY]
+    if await state.get_state() == Login.password.state:
+        await state.set_state(Login.login)  # login allaqachon yuborilgan bo'lsa, boshidan
+    await callback.message.answer(ONEID_HELP, reply_markup=kb.oneid_help(university.url))
     await callback.answer()
 
 
@@ -90,7 +113,7 @@ async def university_not_chosen(message: Message):
 async def got_login(message: Message, state: FSMContext):
     await state.update_data(login=message.text.strip())
     await state.set_state(Login.password)
-    await message.answer("Endi <b>parolingizni</b> yuboring:")
+    await message.answer("Endi <b>parolingizni</b> yuboring:", reply_markup=kb.no_password)
 
 
 @router.message(Login.password, F.text)
@@ -109,8 +132,10 @@ async def got_password(message: Message, state: FSMContext, bot: Bot):
         token = await hemis.login(url, username, password)
         profile = await hemis.get_profile(hemis.Auth(url, token))
     except hemis.LoginError:
-        await wait.edit_text("❌ Login yoki parol noto'g'ri. Qaytadan /start bosing.")
-        await state.clear()
+        await wait.edit_text("❌ Login yoki parol noto'g'ri. <b>Loginingizni</b> qaytadan yuboring.\n\n"
+                             "HEMIS'ga OneID bilan kirib, parolingizni bilmasangiz, pastdagi tugmani bosing.",
+                             reply_markup=kb.no_password)
+        await state.set_state(Login.login)  # universitet tanlovi saqlanadi
         return
     except hemis.HemisError as e:
         await wait.edit_text(f"⚠️ HEMIS bilan bog'lanib bo'lmadi, keyinroq urinib ko'ring.\n<i>{escape(str(e))}</i>")

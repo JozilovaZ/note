@@ -35,6 +35,19 @@ def universities() -> InlineKeyboardMarkup:
     ])
 
 
+ONEID = "oneid"
+
+no_password = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="🆔 Parolim yo'q, OneID bilan kiraman", callback_data=ONEID)],
+])
+
+
+def oneid_help(hemis_url: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🌐 HEMIS'ni ochish", url=f"{hemis_url}/dashboard/login")],
+    ])
+
+
 def subjects(tasks: list, current, selected: int | None, hemis_url: str) -> InlineKeyboardMarkup:
     """Topshirig'i bor fanlar: avval topshirilmaganlari (eng yaqin muddat bo'yicha)."""
     by_subject: dict[int, list] = {}
