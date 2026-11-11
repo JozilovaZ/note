@@ -8,7 +8,8 @@ SamDU va SamSI talabalari uchun Telegram bot. HEMIS'dan olingan ma'lumotlar asos
 - 📊 davomat, 📈 GPA va akademik qarzdorlik, 👤 profil
 - 🔔 eslatmalar: ertalabki jadval, darsdan oldin, yangi NB, sababsiz NB chegarasiga yaqinlashish, topshiriq muddati, yangi topshiriq, GPA o'zgarishi
 
-Parol saqlanmaydi: bazada faqat shifrlangan HEMIS tokeni turadi.
+Parol va HEMIS tokeni bazada shifrlangan (`SECRET_KEY`) holda saqlanadi. Token tugaganda bot
+saqlangan parol bilan o'zi qayta kiradi, talabadan faqat parol o'zgargan bo'lsa qayta so'raladi.
 
 Yangi universitet qo'shish uchun `config.py` dagi `UNIVERSITIES` ro'yxatiga uning HEMIS
 talaba portali manzilini yozing (masalan `https://student.xxx.uz`).
@@ -20,7 +21,7 @@ talaba portali manzilini yozing (masalan `https://student.xxx.uz`).
 | O'zgaruvchi | Ma'nosi |
 |---|---|
 | `BOT_TOKEN` | @BotFather bergan token |
-| `SECRET_KEY` | tokenlarni shifrlash kaliti (pastda qanday yaratish yozilgan) |
+| `SECRET_KEY` | token va parollarni shifrlash kaliti (pastda qanday yaratish yozilgan) |
 | `REMIND_BEFORE` | darsdan necha daqiqa oldin eslatish (standart 5) |
 | `MORNING_TIME` | ertalabki xabar vaqti (standart 07:30) |
 | `ABSENCE_LIMIT` | semestrda ruxsat etilgan sababsiz NB, soat (standart 74; 50%, 75%, 90% va 100% da ogohlantiriladi; `0` — o'chirish) |

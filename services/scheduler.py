@@ -10,7 +10,7 @@ from aiogram.exceptions import TelegramForbiddenError
 from config import ABSENCE_LIMIT, DEFAULT_UNIVERSITY, MORNING_TIME, REMIND_BEFORE, TZ, UNIVERSITIES
 from db import database as db
 from hemis import client as hemis
-from services import formatter
+from services import formatter, session
 
 log = logging.getLogger(__name__)
 
@@ -24,7 +24,8 @@ QUIET_ADVANCE = timedelta(hours=1)  # muddati tunda tugasa, eslatma 21:00 da yub
 ABSENCE_WARN_LEVELS = (50, 75, 90, 100)  # sababsiz NB chegaraning shu foizlariga yetganda ogohlantiriladi
 GPA_TIME = "12:30"           # GPA kuniga bir marta tekshiriladi
 RELOGIN_TEXT = (
-    "⚠️ HEMIS sessiyangiz tugadi. Eslatmalar davom etishi uchun /start bosib qayta kiring."
+    "⚠️ HEMIS'ga avtomatik kira olmadim — parolingiz o'zgargan bo'lishi mumkin. "
+    "Eslatmalar davom etishi uchun /start bosib qayta kiring."
 )
 
 
@@ -39,7 +40,7 @@ async def refresh_user(bot: Bot, telegram_id: int) -> bool:
     if not auth:
         return False
     try:
-        lessons = await hemis.get_schedule(auth)
+        lessons = await session.call(telegram_id, hemis.get_schedule)
     except hemis.TokenExpired:
         await db.invalidate_token(telegram_id)
         await _send(bot, telegram_id, RELOGIN_TEXT)
@@ -62,7 +63,7 @@ async def check_absences(bot: Bot, telegram_id: int) -> None:
     if not auth:
         return
     try:
-        absences = await hemis.get_attendance(auth)
+        absences = await session.call(telegram_id, hemis.get_attendance)
     except hemis.TokenExpired:
         await db.invalidate_token(telegram_id)
         await _send(bot, telegram_id, RELOGIN_TEXT)
@@ -109,7 +110,7 @@ async def check_gpa(bot: Bot, telegram_id: int) -> None:
     if not auth:
         return
     try:
-        items = await hemis.get_gpa(auth)
+        items = await session.call(telegram_id, hemis.get_gpa)
     except hemis.TokenExpired:
         await db.invalidate_token(telegram_id)
         await _send(bot, telegram_id, RELOGIN_TEXT)
@@ -138,7 +139,7 @@ async def sync_tasks(bot: Bot, telegram_id: int, notify_new: bool = True) -> lis
     if not auth:
         return None
     try:
-        tasks = await hemis.get_tasks(auth)
+        tasks = await session.call(telegram_id, hemis.get_tasks)
     except hemis.TokenExpired:
         await db.invalidate_token(telegram_id)
         await _send(bot, telegram_id, RELOGIN_TEXT)

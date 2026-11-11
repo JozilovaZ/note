@@ -76,6 +76,7 @@ def render(s: dict) -> str:
     lines += ["", "🔐 <b>Kirish urinishlari</b> (bugun · 7 kun)"]
     labels = (("login_ok", "✅ Muvaffaqiyatli"), ("login_fail", "❌ Login/parol xato"),
               ("login_captcha", "⏳ Captcha (429)"), ("login_error", "⚠️ HEMIS ishlamadi"),
+              ("relogin_ok", "🔄 Avtomatik qayta kirish"), ("relogin_fail", "🔑 Avto-kirish bo'lmadi"),
               ("logout", "🗑 /chiqish"))
     day, week = s["logins"][1], s["logins"][7]
     for kind, label in labels:

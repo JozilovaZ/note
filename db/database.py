@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
     telegram_id  INTEGER PRIMARY KEY,
     hemis_login  TEXT NOT NULL,
     token        TEXT,              -- shifrlangan; NULL bo'lsa qayta kirish kerak
+    password     TEXT,              -- shifrlangan; token tugaganda avtomatik qayta kirish uchun
     full_name    TEXT,
     group_name   TEXT,
     notify       INTEGER NOT NULL DEFAULT 1,
@@ -103,6 +104,8 @@ async def init() -> None:
         await _db.execute("ALTER TABLE users ADD COLUMN created_at TEXT")
     if "last_seen" not in columns:
         await _db.execute("ALTER TABLE users ADD COLUMN last_seen TEXT")  # YYYY-MM-DD
+    if "password" not in columns:
+        await _db.execute("ALTER TABLE users ADD COLUMN password TEXT")
     if "blocked" not in columns:
         # 1 bo'lsa foydalanuvchi botni bloklagan (xabar yuborib bo'lmadi)
         await _db.execute("ALTER TABLE users ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0")
@@ -141,23 +144,27 @@ def auth(user) -> Auth | None:
     return Auth(university(user).url, token) if token else None
 
 
-async def save_user(telegram_id: int, university: str, login: str, token: str,
+def _encrypt(value: str) -> str:
+    return _fernet.encrypt(value.encode()).decode()
+
+
+async def save_user(telegram_id: int, university: str, login: str, password: str, token: str,
                     full_name: str, group: str) -> None:
     # boshqa hisob bilan kirilsa (login yoki universitet o'zgarsa), eski holat unutiladi
     same = "users.hemis_login = excluded.hemis_login AND users.university = excluded.university"
     await _db.execute(
-        f"""INSERT INTO users (telegram_id, university, hemis_login, token, full_name, group_name,
+        f"""INSERT INTO users (telegram_id, university, hemis_login, password, token, full_name, group_name,
                               created_at, last_seen)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT (telegram_id) DO UPDATE SET
              absences_synced = CASE WHEN {same} THEN users.absences_synced ELSE 0 END,
              tasks_synced = CASE WHEN {same} THEN users.tasks_synced ELSE 0 END,
              absence_warned = CASE WHEN {same} THEN users.absence_warned ELSE 0 END,
              gpa_state = CASE WHEN {same} THEN users.gpa_state ELSE NULL END,
              university = excluded.university,
-             hemis_login = excluded.hemis_login, token = excluded.token,
+             hemis_login = excluded.hemis_login, password = excluded.password, token = excluded.token,
              full_name = excluded.full_name, group_name = excluded.group_name""",
-        (telegram_id, university, login, _fernet.encrypt(token.encode()).decode(), full_name, group,
+        (telegram_id, university, login, _encrypt(password), _encrypt(token), full_name, group,
          _today(), _today()),
     )
     await _db.commit()
@@ -241,6 +248,16 @@ async def logged_in_users() -> list[aiosqlite.Row]:
 
 async def invalidate_token(telegram_id: int) -> None:
     await _db.execute("UPDATE users SET token = NULL WHERE telegram_id = ?", (telegram_id,))
+    await _db.commit()
+
+
+async def set_token(telegram_id: int, token: str) -> None:
+    await _db.execute("UPDATE users SET token = ? WHERE telegram_id = ?", (_encrypt(token), telegram_id))
+    await _db.commit()
+
+
+async def forget_password(telegram_id: int) -> None:
+    await _db.execute("UPDATE users SET password = NULL WHERE telegram_id = ?", (telegram_id,))
     await _db.commit()
 
 

@@ -15,14 +15,14 @@ from bot import keyboards as kb
 from config import ABSENCE_LIMIT, MORNING_TIME, REMIND_BEFORE, UNIVERSITIES
 from db import database as db
 from hemis import client as hemis
-from services import formatter
+from services import formatter, session
 from services.scheduler import check_absences, check_gpa, now, refresh_user, sync_tasks
 
 router = Router()
 log = logging.getLogger(__name__)
 
 NOT_LOGGED_IN = "Avval HEMIS'ga kiring: /start"
-SESSION_EXPIRED = "⚠️ HEMIS sessiyangiz tugadi. /start bosib qayta kiring."
+SESSION_EXPIRED = "⚠️ HEMIS'ga avtomatik kira olmadim — parolingiz o'zgargan bo'lishi mumkin. /start bosib qayta kiring."
 HEMIS_DOWN = "⚠️ HEMIS hozir javob bermayapti, keyinroq urinib ko'ring."
 
 
@@ -43,7 +43,7 @@ async def _user_or_reply(message: Message):
 async def _from_hemis(message: Message, user, fetch):
     """HEMIS'dan jonli ma'lumot oladi; xato bo'lsa foydalanuvchiga yozib None qaytaradi."""
     try:
-        return await fetch(db.auth(user))
+        return await session.call(user["telegram_id"], fetch)
     except hemis.TokenExpired:
         await db.invalidate_token(user["telegram_id"])
         await message.answer(SESSION_EXPIRED)
@@ -64,7 +64,9 @@ async def start(message: Message, state: FSMContext):
     await message.answer(
         "Salom! Men dars jadvalingizni eslatib turaman: qaysi dars, qaysi xonada, soat nechida.\n\n"
         "🔐 Login va parolingiz faqat HEMIS'ga kirish uchun ishlatiladi. "
-        "Parol <b>saqlanmaydi</b> va xabaringiz chatdan darhol o'chiriladi.",
+        "Parol shifrlangan holda saqlanadi — HEMIS sessiyasi tugaganda qayta so'ramasdan "
+        "o'zim kirishim uchun. Parolli xabaringiz chatdan darhol o'chiriladi, "
+        "/chiqish bosilsa hammasi o'chiriladi.",
         reply_markup=ReplyKeyboardRemove(),
     )
     await message.answer(kb.universities_text(), reply_markup=kb.universities())
@@ -110,10 +112,6 @@ async def got_login(message: Message, state: FSMContext):
     await message.answer(f"Endi <b>parolingizni</b> yuboring:{hint}")
 
 
-RATE_LIMIT_PAUSE = timedelta(minutes=5)
-_rate_limited_until: dict[str, datetime] = {}  # universitet -> HEMIS'ga qayta urinish mumkin bo'lgan vaqt
-
-
 def _rate_limited_text(until: datetime) -> str:
     return (
         "⏳ HEMIS ko'p kirish urinishlari sababli botga vaqtincha cheklov qo'ydi. "
@@ -136,8 +134,7 @@ async def got_password(message: Message, state: FSMContext, bot: Bot):
     data = await state.get_data()
     username, university = data["login"], data["university"]
     url = UNIVERSITIES[university].url
-    until = _rate_limited_until.get(university)
-    if until and now() < until:
+    if until := session.rate_limited(university):
         # cheklov paytida urinish uni uzaytiradi, shuning uchun HEMIS'ga yubormaymiz
         await message.answer(_rate_limited_text(until), reply_markup=kb.wrong_password)
         return
@@ -148,7 +145,7 @@ async def got_password(message: Message, state: FSMContext, bot: Bot):
         profile = await hemis.get_profile(hemis.Auth(url, token))
     except hemis.RateLimited:
         await db.count("login_captcha", university)
-        until = _rate_limited_until[university] = now() + RATE_LIMIT_PAUSE
+        until = session.set_rate_limited(university)
         log.warning("Login: %s HEMIS'i captcha talab qilyapti (429), kirish %s gacha to'xtatildi",
                     university, f"{until:%H:%M}")
         await wait.edit_text(_rate_limited_text(until), reply_markup=kb.wrong_password)
@@ -184,11 +181,10 @@ async def got_password(message: Message, state: FSMContext, bot: Bot):
         await wait.edit_text(f"⚠️ HEMIS bilan bog'lanib bo'lmadi, keyinroq urinib ko'ring.\n<i>{escape(str(e))}</i>")
         await state.clear()
         return
-    finally:
-        del password
 
     await state.clear()
-    await db.save_user(message.from_user.id, university, username, token, profile["full_name"], profile["group"])
+    await db.save_user(message.from_user.id, university, username, password, token,
+                       profile["full_name"], profile["group"])
     await db.count("login_ok", university)
     await refresh_user(bot, message.from_user.id)
     await check_absences(bot, message.from_user.id)  # mavjud NB'larni eslab qoladi
