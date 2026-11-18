@@ -56,8 +56,12 @@ async def relogin(telegram_id: int, expired_token: str | None) -> hemis.Auth:
             await db.count("login_captcha", uni)
             set_rate_limited(uni)
             raise
-        except (hemis.LoginError, hemis.ApiError) as e:
-            # parol o'zgargan yoki HEMIS rad etdi: qayta-qayta urinib captcha chaqirmaslik uchun
+        except hemis.ApiError as e:
+            # HEMIS vaqtincha xato qaytardi: parolni o'chirmaymiz, keyingi tekshiruvda yana urinadi
+            log.warning("Avtomatik qayta kirishda HEMIS xatosi (%s): %s", telegram_id, e)
+            raise hemis.HemisError(str(e)) from e
+        except hemis.LoginError as e:
+            # parol o'zgargan: qayta-qayta urinib captcha chaqirmaslik uchun
             # parolni unutamiz, talaba bir marta /start orqali kiradi
             log.info("Avtomatik qayta kirish bo'lmadi (%s): %r", telegram_id, e)
             await db.count("relogin_fail", uni)
